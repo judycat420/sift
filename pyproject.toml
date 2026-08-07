@@ -16,9 +16,17 @@ dependencies = [
     "zstandard>=0.25.0",
 ]
 
+[project.scripts]
+sift-pack = "sift_pack.cli:main"
+
 [build-system]
 requires = ["uv_build>=0.12.2,<0.13.0"]
 build-backend = "uv_build"
+
+# The distribution is `sift`; the importable build-half package is `sift_pack`
+# (docs/decisions.md, 2026-08-06). Tell the backend they differ.
+[tool.uv.build-backend]
+module-name = "sift_pack"
 
 [dependency-groups]
 dev = [
@@ -129,20 +137,26 @@ pretty = true
 # pytest
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# `src` is on testpaths so --doctest-modules collects the examples in
+# docstrings: STANDARDS.md rule 3 requires them to be runnable, and this is
+# what makes "runnable" mechanical rather than aspirational.
+testpaths = ["tests", "src"]
 addopts = [
     "--strict-markers",
     "--strict-config",
     "-ra",
-    "--cov=sift",
+    "--doctest-modules",
+    "--import-mode=importlib",
+    "--cov=sift_pack",
     "--cov-report=term-missing",
     "--cov-fail-under=90",
 ]
+doctest_optionflags = ["ELLIPSIS", "IGNORE_EXCEPTION_DETAIL"]
 filterwarnings = ["error"]
 
 [tool.coverage.run]
 branch = true
-source = ["src/sift"]
+source = ["src/sift_pack"]
 
 [tool.coverage.report]
 exclude_also = [

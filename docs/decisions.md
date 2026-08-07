@@ -58,3 +58,47 @@ budget we need for metadata and would pull in photos whose licences we have
 excluded. The cost is two ingest paths to maintain and a bucket export that
 lags the API by roughly a month, so image availability trails metadata; that
 lag is acceptable because images are cached and metadata is not.
+
+### 2026-08-06 — The build half is the `sift_pack` package; the distribution stays `sift`
+
+Python code lives in `src/sift_pack/`, published by a distribution still named
+`sift` and exposed as the `sift-pack` console script. The split names the two
+halves of the system: `sift_pack` builds packs and is the only half that talks
+to upstream sources, while the runtime that consumes a pack shares no code with
+it and communicates only through the manifest schema. Naming the package for
+its job rather than for the product makes the boundary hard to blur — there is
+no obvious place inside `sift_pack` to put runtime code. The cost is one
+indirection in `pyproject.toml` (`tool.uv.build-backend.module-name`) and a
+package name that does not match the import people expect from the repo name.
+
+### 2026-08-06 — Bird axis 1 is seasonality, not nativity
+
+When the birds domain is implemented, its second axis will be seasonality —
+resident, summer, winter, migrant — and not the native/introduced distinction
+the plants domain uses. Nativity is close to meaningless for a migratory
+animal: a snowy owl in Michigan in January is not "introduced", it is an
+irruptive winter visitor, and a barn swallow is present for half the year and
+in South America for the other half. Reusing the plants vocabulary would
+produce labels that are grammatical, confident and wrong — the exact failure
+mode Sift exists to prevent, and one that would be nearly invisible because
+every card would look plausible. Until somebody implements a seasonality axis
+with a real source behind it, `BirdsDomain` raises `NotImplementedError` on
+every method rather than inheriting plants' behaviour. The cost is that adding
+birds is a genuine piece of work rather than a config change, plus a domain in
+the registry that cannot be built today; that is the honest price.
+
+### 2026-08-06 — `axis1_answer` returns `None` for "cannot determine", and callers must drop
+
+The domain protocol's `axis1_answer` returns `Axis1Result | None`, where `None`
+means the domain could not determine the claim. Callers are required to drop
+the taxon and count the drop; there is no default, no fallback to the commonest
+value, and no "unknown" member in the vocabulary to put a guess into. `None`
+rather than an exception, because not knowing whether a given species is native
+to a given state is the ordinary state of affairs — regional datasets are
+patchy, and an exception would imply something went wrong when nothing did.
+The schema backs this up: `Taxon.axis1_source` has no default, so a taxon
+without a resolved claim cannot be constructed at all. The cost is that packs
+will be much smaller than the candidate pool, especially early — the M1 plants
+build resolves nothing and emits zero taxa — and that every caller carries the
+obligation to handle `None`. An empty deck is the correct output for a build
+that knows nothing.

@@ -7,12 +7,12 @@ import socket
 
 import pytest
 
-import sift
+import sift_pack
 from tests.conftest import NetworkAccessError
 
 
 def test_package_exposes_version() -> None:
-    assert sift.__version__
+    assert sift_pack.__version__
 
 
 def test_network_is_blocked_in_tests() -> None:

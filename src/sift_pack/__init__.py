@@ -1,12 +1,16 @@
-"""Sift: a provenance-preserving pipeline for plant reference data.
+"""Sift pack builder: the Python half that produces study packs.
 
 WHY THIS PACKAGE EXISTS
 -----------------------
-Botanical reference data is aggregated from many sources whose licences,
+Reference data about living things is aggregated from sources whose licences,
 taxonomies and update cadences disagree with each other. The failure mode is
 not "wrong data" so much as "data whose origin has been lost" — once a claim
 is flattened into a bare string, no downstream consumer can tell whether it
-came from a peer-reviewed dataset, a crowd-sourced observation, or a guess.
+came from a curated dataset, a crowd-sourced observation, or a guess.
+
+`sift_pack` is the build half: it fetches, filters and assembles packs. The
+runtime half consumes the manifest this package emits and never talks to any
+upstream source itself. `manifest.py` is the contract between the two.
 
 INVARIANT PROTECTED
 -------------------
