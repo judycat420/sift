@@ -1,217 +1,254 @@
-"""Tests for the build path: the drop contract, and the end-to-end CLI."""
+"""Tests for the CLI verbs: what they emit, and what they refuse to emit."""
 
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
-from sift_pack.cli import MICHIGAN_CANDIDATES, Candidate, Drop, DropReport, app, assemble
-from sift_pack.domains import Axis1Result
-from sift_pack.domains.birds import BirdsDomain
-from sift_pack.domains.plants import PlantsDomain
-from sift_pack.manifest import Manifest
-
-BUILT_AT = datetime(2026, 8, 6, 12, 0, 0, tzinfo=UTC)
+from sift_pack.candidates import CandidatePool, CandidateTaxon, DropRecord
+from sift_pack.cli import app, pool_path
+from sift_pack.manifest import SourceRef
+from tests.fixture_client import FIXTURE_CACHE
+from tests.test_candidates import _photo
 
 runner = CliRunner()
 
-
-class _ResolvingDomain:
-    """A stand-in for the M3 plants domain: resolves every taxon with provenance.
-
-    Exists so the assembly path can be tested at full strength before USDA is
-    wired in. If this stub produces a valid, complete manifest, then M3 only has
-    to make `PlantsDomain.axis1_answer` return real claims.
-    """
-
-    slug: str = "plants"
-    iconic_taxon_id: int = 47126
-    axis1_label: str = "Native or introduced?"
-
-    def axis1_options(self, state: str) -> list[str]:
-        del state
-        return ["native", "introduced"]
-
-    def axis1_answer(self, taxon_id: int, state: str) -> Axis1Result | None:
-        del state
-        value = "introduced" if taxon_id == 55849 else "native"
-        return Axis1Result(
-            value=value,
-            source="USDA PLANTS",
-            confidence="high",
-            source_version=date(2026, 7, 1),
-        )
-
-    def prompt_copy(self) -> dict[str, str]:
-        return {"question": "What plant is this?", "axis1_prompt": "Native or introduced?"}
+FETCHED_AT = datetime(2026, 8, 7, 12, 0, 0, tzinfo=UTC)
 
 
-class _PartialDomain(_ResolvingDomain):
-    """Resolves some taxa and not others — the realistic M3 case."""
-
-    def axis1_answer(self, taxon_id: int, state: str) -> Axis1Result | None:
-        if taxon_id == 55849:
-            return None
-        return super().axis1_answer(taxon_id, state)
-
-
-# --- the drop contract --------------------------------------------------------
-
-
-def test_unresolved_taxa_are_dropped_not_defaulted() -> None:
-    manifest, report = assemble(PlantsDomain(), "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-    assert manifest.taxa == []
-    assert manifest.images == []
-    assert report.considered == 3
-    assert report.kept == 0
-    assert report.counts_by_reason() == {"axis1_undetermined": 3}
-
-
-def test_the_empty_pack_is_still_a_valid_manifest() -> None:
-    manifest, _ = assemble(PlantsDomain(), "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-    round_tripped = Manifest.model_validate_json(manifest.model_dump_json())
-    assert round_tripped.domain == "plants"
-    assert round_tripped.sources  # attribution survives even with no taxa
-
-
-def test_every_drop_names_the_taxon_and_a_reason() -> None:
-    _, report = assemble(PlantsDomain(), "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-    dropped_ids = {drop.inat_taxon_id for drop in report.drops}
-    assert dropped_ids == {c.inat_taxon_id for c in MICHIGAN_CANDIDATES}
-    for drop in report.drops:
-        assert drop.reason == "axis1_undetermined"
-        assert drop.scientific_name
-        assert drop.detail
-
-
-def test_considered_always_equals_kept_plus_dropped() -> None:
-    for domain in (PlantsDomain(), _ResolvingDomain(), _PartialDomain()):
-        _, report = assemble(domain, "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-        assert report.considered == report.kept + len(report.drops)
-
-
-# --- the path M3 will take ----------------------------------------------------
-
-
-def test_a_resolving_domain_produces_a_complete_manifest() -> None:
-    manifest, report = assemble(_ResolvingDomain(), "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-    assert report.kept == 3
-    assert report.drops == ()
-    assert len(manifest.taxa) == 3
-    assert len(manifest.images) == 12
-    for taxon in manifest.taxa:
-        assert taxon.axis1_source == "USDA PLANTS"
-        assert taxon.axis1_confidence == "high"
+def _write_pool(work_dir: Path, state: str = "MI") -> Path:
+    """Put a small, valid pool where the CLI expects to find one."""
+    pool = CandidatePool(
+        domain="plants",
+        state=state,
+        place_id=29,
+        fetched_at=FETCHED_AT,
+        sources=[
+            SourceRef(
+                name="iNaturalist API",
+                version="v1",
+                retrieved_at=FETCHED_AT,
+                url="https://api.inaturalist.org/v1/",
+            )
+        ],
+        candidates=[
+            CandidateTaxon(
+                inat_taxon_id=47911,
+                scientific_name="Asclepias syriaca",
+                common_names=["common milkweed"],
+                rank="species",
+                genus="Asclepias",
+                family="Apocynaceae",
+                obs_count=9108,
+                identification_agreement=2,
+                images=[_photo(n, 47911) for n in range(1, 6)],
+            ),
+            CandidateTaxon(
+                inat_taxon_id=52391,
+                scientific_name="Pinus strobus",
+                common_names=["eastern white pine"],
+                rank="species",
+                genus="Pinus",
+                family="Pinaceae",
+                obs_count=6426,
+                identification_agreement=3,
+                images=[_photo(n, 52391) for n in range(10, 17)],
+            ),
+        ],
+        dropped=[
+            DropRecord(inat_taxon_id=1, name="Carex", reason="rank_not_species", detail="genus"),
+            DropRecord(
+                inat_taxon_id=2,
+                name="Rara avis",
+                reason="obs_count_below_threshold",
+                detail="12 observations, need 50",
+            ),
+        ],
+    )
+    destination = pool_path(state, work_dir)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(pool.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return destination
 
 
-def test_the_claim_travels_into_the_manifest_unchanged() -> None:
-    manifest, _ = assemble(_ResolvingDomain(), "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-    by_id = {taxon.inat_taxon_id: taxon for taxon in manifest.taxa}
-    assert by_id[55849].axis1_value == "introduced"  # garlic mustard
-    assert by_id[48662].axis1_value == "native"  # butterfly weed
+# --- places -------------------------------------------------------------------
 
 
-def test_a_partial_domain_keeps_only_what_it_resolved() -> None:
-    manifest, report = assemble(_PartialDomain(), "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-    assert report.kept == 2
-    assert report.counts_by_reason() == {"axis1_undetermined": 1}
-    assert 55849 not in {taxon.inat_taxon_id for taxon in manifest.taxa}
-    # The dropped taxon's images went with it, or the manifest would not validate.
-    assert 55849 not in {image.taxon_id for image in manifest.images}
-    assert len(manifest.images) == 8
+def test_places_lists_the_committed_table() -> None:
+    result = runner.invoke(app, ["places"])
+    assert result.exit_code == 0
+    assert "MI\t29\tMichigan" in result.stdout
+    assert len(result.stdout.strip().splitlines()) == 50
 
 
-def test_a_full_manifest_round_trips_byte_identically() -> None:
-    manifest, _ = assemble(_ResolvingDomain(), "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-    first = manifest.model_dump_json(indent=2)
-    second = Manifest.model_validate_json(first).model_dump_json(indent=2)
-    assert first == second
+# --- stats --------------------------------------------------------------------
 
 
-def test_assemble_propagates_the_birds_refusal() -> None:
-    with pytest.raises(NotImplementedError, match="seasonality"):
-        assemble(BirdsDomain(), "MI", MICHIGAN_CANDIDATES, built_at=BUILT_AT)
-
-
-# --- the CLI ------------------------------------------------------------------
-
-
-def test_build_emits_a_valid_manifest() -> None:
-    result = runner.invoke(app, ["build", "--domain", "plants", "--state", "MI", "--limit", "3"])
+def test_stats_reports_kept_dropped_licences_and_distributions(tmp_path: Path) -> None:
+    _write_pool(tmp_path)
+    result = runner.invoke(app, ["stats", "--state", "MI", "--work-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    manifest = Manifest.model_validate_json(result.stdout)
-    assert manifest.domain == "plants"
-    assert manifest.state == "MI"
-    assert manifest.pack_version == 1
-    assert manifest.taxa == []
+    out = result.stdout
+    assert "candidates kept: 2" in out
+    assert "dropped: 2" in out
+    assert "rank_not_species: 1" in out
+    assert "obs_count_below_threshold: 1" in out
+    assert "cc0:" in out
+    assert "4-5 images: 1 taxa" in out
+    assert "6-8 images: 1 taxa" in out
+    assert "median:" in out
+    assert "p10:" in out
+    assert "median identification agreement:" in out
 
 
-def test_build_reports_its_drops_on_stderr() -> None:
-    result = runner.invoke(app, ["build", "--domain", "plants", "--state", "MI", "--limit", "3"])
-    assert result.exit_code == 0
-    assert "considered 3, kept 0, dropped 3" in result.stderr
-    assert "axis1_undetermined" in result.stderr
-    assert "is empty" in result.stderr
+def test_stats_reports_every_drop_reason_even_at_zero(tmp_path: Path) -> None:
+    # A category that stopped firing must stay visible, or a regression that
+    # silences one filter looks like an improvement.
+    _write_pool(tmp_path)
+    result = runner.invoke(app, ["stats", "--state", "MI", "--work-dir", str(tmp_path)])
+    assert "hybrid: 0" in result.stdout
+    assert "insufficient_licensed_photos: 0" in result.stdout
 
 
-def test_build_keeps_stdout_pipeable() -> None:
-    # stdout must be nothing but JSON, so `sift-pack build ... | jq` works.
-    result = runner.invoke(app, ["build", "--domain", "plants", "--state", "MI"])
-    assert json.loads(result.stdout)["domain"] == "plants"
+def test_stats_without_a_pool_exits_nonzero(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["stats", "--state", "MI", "--work-dir", str(tmp_path)])
+    assert result.exit_code == 6
+    assert "no candidate pool" in result.stderr
 
 
-def test_build_honours_the_limit() -> None:
-    result = runner.invoke(app, ["build", "--domain", "plants", "--state", "MI", "--limit", "1"])
-    assert "considered 1," in result.stderr
+# --- build: refuses to fabricate ---------------------------------------------
 
 
-def test_build_writes_to_a_file_when_asked(tmp_path: Path) -> None:
-    out = tmp_path / "pack.json"
-    result = runner.invoke(app, ["build", "--domain", "plants", "--state", "MI", "--out", str(out)])
-    assert result.exit_code == 0
-    assert Manifest.model_validate_json(out.read_text(encoding="utf-8")).domain == "plants"
+def test_build_refuses_and_explains_what_is_missing(tmp_path: Path) -> None:
+    _write_pool(tmp_path)
+    result = runner.invoke(app, ["build", "--state", "MI", "--work-dir", str(tmp_path)])
+    assert result.exit_code == 4
+    assert "cannot build a manifest yet" in result.stderr
+    assert "USDA PLANTS" in result.stderr
+    assert "sha256" in result.stderr
 
 
-def test_build_rejects_an_unknown_domain_without_falling_back() -> None:
-    result = runner.invoke(app, ["build", "--domain", "birbs", "--state", "MI"])
+def test_build_emits_nothing_on_stdout(tmp_path: Path) -> None:
+    # An empty manifest would be a false claim: that promotion ran and rejected
+    # everything. Nothing ran.
+    _write_pool(tmp_path)
+    result = runner.invoke(app, ["build", "--state", "MI", "--work-dir", str(tmp_path)])
+    assert result.stdout == ""
+
+
+def test_build_without_a_pool_exits_nonzero(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["build", "--state", "MI", "--work-dir", str(tmp_path)])
+    assert result.exit_code == 6
+
+
+# --- fetch: argument handling (no network; offline mode proves it) -----------
+
+
+def test_fetch_rejects_an_unknown_domain(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app, ["fetch", "--domain", "birbs", "--state", "MI", "--work-dir", str(tmp_path)]
+    )
     assert result.exit_code == 2
     assert "unknown domain 'birbs'" in result.stderr
-    assert result.stdout == ""
 
 
-def test_build_refuses_birds_with_an_explanation() -> None:
-    result = runner.invoke(app, ["build", "--domain", "birds", "--state", "MI"])
-    assert result.exit_code == 3
-    assert "seasonality" in result.stderr
-    assert "docs/decisions.md" in result.stderr
-    assert result.stdout == ""
-
-
-# --- report accounting --------------------------------------------------------
-
-
-def test_drop_report_counts_group_by_reason() -> None:
-    report = DropReport(
-        considered=3,
-        kept=1,
-        drops=(
-            Drop(1, "One", "axis1_undetermined", "d"),
-            Drop(2, "Two", "axis1_undetermined", "d"),
-        ),
+def test_fetch_rejects_an_unknown_state(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app, ["fetch", "--domain", "plants", "--state", "ZZ", "--work-dir", str(tmp_path)]
     )
-    assert report.counts_by_reason() == {"axis1_undetermined": 2}
+    assert result.exit_code == 5
+    assert "no place ID" in result.stderr
 
 
-def test_candidates_carry_enough_images_to_pass_the_schema() -> None:
-    for candidate in MICHIGAN_CANDIDATES:
-        assert len(candidate.images) >= 4
-        assert all(image.taxon_id == candidate.inat_taxon_id for image in candidate.images)
+def test_fetch_offline_with_a_cold_cache_fails_loudly(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "--domain",
+            "plants",
+            "--state",
+            "MI",
+            "--offline",
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--work-dir",
+            str(tmp_path / "work"),
+        ],
+    )
+    assert result.exit_code == 5
+    assert "no cached response" in result.stderr
 
 
-def test_candidate_has_no_axis1_fields() -> None:
-    # A candidate must not be able to carry a claim; that is the domain's job.
-    assert not [f for f in Candidate.__dataclass_fields__ if f.startswith("axis1")]
+def test_fetch_over_recorded_fixtures_writes_a_pool(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "--domain",
+            "plants",
+            "--state",
+            "MI",
+            "--limit",
+            "3",
+            "--offline",
+            "--cache-dir",
+            str(FIXTURE_CACHE),
+            "--work-dir",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    written = pool_path("MI", tmp_path)
+    pool = CandidatePool.model_validate_json(written.read_text(encoding="utf-8"))
+    assert pool.candidates
+    assert "0 fetched" in result.stderr  # offline: zero network calls
+
+
+def test_fetch_reports_its_cost(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "--domain",
+            "plants",
+            "--state",
+            "MI",
+            "--limit",
+            "3",
+            "--offline",
+            "--cache-dir",
+            str(FIXTURE_CACHE),
+            "--work-dir",
+            str(tmp_path),
+        ],
+    )
+    assert "candidates" in result.stderr
+    assert "dropped" in result.stderr
+    assert "requests:" in result.stderr
+
+
+def test_fetched_pool_is_valid_json(tmp_path: Path) -> None:
+    runner.invoke(
+        app,
+        [
+            "fetch",
+            "--domain",
+            "plants",
+            "--state",
+            "MI",
+            "--limit",
+            "3",
+            "--offline",
+            "--cache-dir",
+            str(FIXTURE_CACHE),
+            "--work-dir",
+            str(tmp_path),
+        ],
+    )
+    payload = json.loads(pool_path("MI", tmp_path).read_text(encoding="utf-8"))
+    assert payload["domain"] == "plants"
+    assert payload["place_id"] == 29

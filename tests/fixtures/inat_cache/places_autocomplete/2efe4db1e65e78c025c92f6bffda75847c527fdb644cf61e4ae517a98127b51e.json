@@ -1,0 +1,78 @@
+{
+ "endpoint": "places_autocomplete",
+ "note": "projected to the fields Sift reads; values are verbatim",
+ "params": {
+  "q": "Washington"
+ },
+ "recorded_by": "scripts/record_fixtures.py",
+ "response": {
+  "results": [
+   {
+    "admin_level": 10,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     46
+    ],
+    "id": 46,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97395,
+     6873,
+     11544,
+     25841
+    ],
+    "id": 25841,
+    "name": "New Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     25,
+     2367
+    ],
+    "id": 2367,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     19,
+     432
+    ],
+    "id": 432,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     35,
+     2303
+    ],
+    "id": 2303,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     30,
+     2464
+    ],
+    "id": 2464,
+    "name": "Washington County, US, NC"
+   }
+  ],
+  "total_results": 191
+ }
+}

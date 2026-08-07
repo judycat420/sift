@@ -1,0 +1,70 @@
+{
+ "endpoint": "places_autocomplete",
+ "note": "projected to the fields Sift reads; values are verbatim",
+ "params": {
+  "q": "Michigan"
+ },
+ "recorded_by": "scripts/record_fixtures.py",
+ "response": {
+  "results": [
+   {
+    "admin_level": 10,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     29
+    ],
+    "id": 29,
+    "name": "Michigan"
+   },
+   {
+    "admin_level": 100,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     35,
+     97430
+    ],
+    "id": 97430,
+    "name": "Illinois and Michigan Canal National Heritage Corridor"
+   },
+   {
+    "admin_level": null,
+    "ancestor_place_ids": [
+     119469,
+     124421
+    ],
+    "id": 124421,
+    "name": "Michigan Islands Wilderness"
+   },
+   {
+    "admin_level": null,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     32,
+     1499,
+     193589
+    ],
+    "id": 193589,
+    "name": "Lake Michigan Wind & Sun - Monarch Habitat Project"
+   },
+   {
+    "admin_level": null,
+    "ancestor_place_ids": [
+     75977,
+     121667
+    ],
+    "id": 121667,
+    "name": "Michigan Wildlife Foundation"
+   },
+   {
+    "admin_level": null,
+    "ancestor_place_ids": null,
+    "id": 189104,
+    "name": "Tower Hill Camp, Harbert, Michigan"
+   }
+  ],
+  "total_results": 59
+ }
+}

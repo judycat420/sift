@@ -7,8 +7,8 @@ every user-facing claim attached to the source it came from and a confidence in
 it. Where a claim cannot be attributed, it is dropped and counted — never
 guessed.
 
-Status: **M1 — schema and domain seam**. No network calls and no real data yet;
-the plants domain resolves nothing, so a build correctly emits an empty pack.
+Status: **M2 — iNaturalist ingest**. `fetch` produces real candidate pools;
+`build` cannot yet produce a manifest and says so rather than guessing.
 
 ## Getting started
 
@@ -16,26 +16,51 @@ the plants domain resolves nothing, so a build correctly emits an empty pack.
 make install   # uv sync, including dev dependencies
 make check     # install + lint + typecheck + test — what CI runs
 
-uv run sift-pack build --domain plants --state MI --limit 3
+uv run sift-pack fetch --domain plants --state MI --limit 250
+uv run sift-pack stats --state MI
 ```
 
-The manifest goes to stdout; the drop accounting goes to stderr, so the JSON
-stays pipeable. Today every candidate is dropped for `axis1_undetermined` —
-nothing is wired to USDA PLANTS until M3, and a pack with no claims is the
-correct output for a build that resolved none.
+`fetch` writes `work/candidates_MI.json` and caches every API response under
+`cache/`, so a second run makes zero network calls and an interrupted run
+resumes simply by being run again. Progress and drop accounting go to stderr.
+
+`build` exits 4: promotion needs a nativity claim with a source (USDA PLANTS,
+M3) and image digests from the open-data bucket. It refuses to emit an empty
+manifest, because that would claim promotion ran and rejected everything.
 
 Individual targets: `make lint`, `make format`, `make typecheck`, `make test`.
 `make help` lists them.
+
+## The pipeline
+
+```
+iNaturalist ──fetch──> CandidatePool ──promote──> Manifest ──> runtime
+                       (work/)          (M3)      (pack)
+```
+
+`CandidateTaxon` has no field capable of holding a nativity claim, under any
+name. That is what makes promotion the only path by which one can exist, and
+promotion requires a source by construction.
 
 ## Repository layout
 
 ```
 src/sift_pack/           The build half: fetches, filters, assembles packs
   manifest.py            Pack schema — the contract with the runtime half
+  candidates.py          Intermediate schema — what iNaturalist alone can assert
+  inat/                  The only code permitted to call the API
+    client.py            Disk cache + rate limiting + response normalisation
+    places.py            State -> place_id, resolved once into data/places.json
+    deck.py              Which taxa are worth learning in a place
+    photos.py            Licence-cleared photos, one per observation
+  fetch.py               Orchestrates the three stages into one pool
+  stats.py               What a pool actually contains
   domains/               The one axis on which plants/birds/pollinators differ
-  cli.py                 `sift-pack`, and the stage that enforces the drop rule
+  cli.py                 `sift-pack fetch | stats | places | build`
+data/places.json         Committed state -> place_id table
+scripts/record_fixtures.py  Re-record test fixtures (live; run by hand)
 tests/                   Test suite; tests never touch the network
-tests/fixtures/          Recorded HTTP responses (see the README there)
+tests/fixtures/          Recorded API responses (see the README there)
 docs/decisions.md        ADR-lite — dated decisions, append only
 docs/sources.md          Every external source: licence, citation, limitations
 STANDARDS.md             The contract all contributions must meet

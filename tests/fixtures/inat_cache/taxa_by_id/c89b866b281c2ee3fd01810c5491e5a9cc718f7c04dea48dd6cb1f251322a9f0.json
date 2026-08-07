@@ -1,0 +1,280 @@
+{
+ "endpoint": "taxa_by_id",
+ "note": "projected to the fields Sift reads; values are verbatim",
+ "params": {
+  "ids": [
+   47911,
+   52391,
+   55402,
+   49477,
+   50310,
+   49288
+  ]
+ },
+ "recorded_by": "scripts/record_fixtures.py",
+ "response": {
+  "results": [
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Magnoliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Gentianales",
+      "rank": "order"
+     },
+     {
+      "name": "Apocynaceae",
+      "rank": "family"
+     },
+     {
+      "name": "Asclepiadoideae",
+      "rank": "subfamily"
+     },
+     {
+      "name": "Asclepiadeae",
+      "rank": "tribe"
+     },
+     {
+      "name": "Asclepiadinae",
+      "rank": "subtribe"
+     },
+     {
+      "name": "Asclepias",
+      "rank": "genus"
+     }
+    ],
+    "id": 47911,
+    "name": "Asclepias syriaca"
+   },
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Pinopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Pinales",
+      "rank": "order"
+     },
+     {
+      "name": "Pinaceae",
+      "rank": "family"
+     },
+     {
+      "name": "Pinoideae",
+      "rank": "subfamily"
+     },
+     {
+      "name": "Pinus",
+      "rank": "genus"
+     },
+     {
+      "name": "Strobus",
+      "rank": "subgenus"
+     },
+     {
+      "name": "Quinquefoliae",
+      "rank": "section"
+     },
+     {
+      "name": "Strobus",
+      "rank": "subsection"
+     }
+    ],
+    "id": 52391,
+    "name": "Pinus strobus"
+   },
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Liliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Liliales",
+      "rank": "order"
+     },
+     {
+      "name": "Melanthiaceae",
+      "rank": "family"
+     },
+     {
+      "name": "Parideae",
+      "rank": "tribe"
+     },
+     {
+      "name": "Trillium",
+      "rank": "genus"
+     },
+     {
+      "name": "Callipetalon",
+      "rank": "subgenus"
+     }
+    ],
+    "id": 55402,
+    "name": "Trillium grandiflorum"
+   },
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Magnoliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Ericales",
+      "rank": "order"
+     },
+     {
+      "name": "Ericaceae",
+      "rank": "family"
+     },
+     {
+      "name": "Monotropoideae",
+      "rank": "subfamily"
+     },
+     {
+      "name": "Monotropa",
+      "rank": "genus"
+     }
+    ],
+    "id": 49477,
+    "name": "Monotropa uniflora"
+   },
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Liliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Alismatales",
+      "rank": "order"
+     },
+     {
+      "name": "Araceae",
+      "rank": "family"
+     },
+     {
+      "name": "Aroideae",
+      "rank": "subfamily"
+     },
+     {
+      "name": "Arisaemateae",
+      "rank": "tribe"
+     },
+     {
+      "name": "Arisaema",
+      "rank": "genus"
+     },
+     {
+      "name": "Arisaema triphyllum",
+      "rank": "complex"
+     }
+    ],
+    "id": 50310,
+    "name": "Arisaema triphyllum"
+   },
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Magnoliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Ranunculales",
+      "rank": "order"
+     },
+     {
+      "name": "Berberidaceae",
+      "rank": "family"
+     },
+     {
+      "name": "Podophylloideae",
+      "rank": "subfamily"
+     },
+     {
+      "name": "Podophylleae",
+      "rank": "tribe"
+     },
+     {
+      "name": "Podophyllum",
+      "rank": "genus"
+     }
+    ],
+    "id": 49288,
+    "name": "Podophyllum peltatum"
+   }
+  ],
+  "total_results": 6
+ }
+}

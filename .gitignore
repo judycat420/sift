@@ -20,6 +20,11 @@ htmlcov/
 # Local editor/agent settings
 .claude/settings.local.json*
 
-# Local data — never commit fetched corpora or image caches
-data/
+# Local data — never commit fetched corpora or image caches.
+# data/places.json is the exception: it is a committed lookup table, resolved
+# once by `sift-pack places --refresh` (docs/decisions.md, 2026-08-07).
+data/*
+!data/places.json
+cache/
+work/
 *.zst

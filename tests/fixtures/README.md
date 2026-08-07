@@ -1,42 +1,63 @@
 # Recorded HTTP fixtures
 
-Tests never touch the network (STANDARDS.md rule 6). Every outbound HTTP call is
-mocked with [`respx`](https://lundberg.github.io/respx/) and replayed from a
-fixture recorded here.
+Tests never touch the network (STANDARDS.md rule 6). Every response the code
+would have fetched is recorded here and replayed from disk.
 
 ## Layout
 
+`inat_cache/` is a real `InatClient` cache directory. Tests point a client at it
+with `offline=True`, so they exercise the production code path — key derivation,
+envelope parsing, response normalisation — with no HTTP library and no mock in
+the loop. Anything a test asks for that was not recorded raises `CacheMissError`
+naming the request, rather than a socket error.
+
 ```
-tests/fixtures/
-  inaturalist/          # one directory per external source
-    taxa_47126.json     # <endpoint>_<key>.json
-    taxa_47126.meta.json
+tests/fixtures/inat_cache/
+  observations/<sha256-of-endpoint-and-params>.json
+  species_counts/...
+  taxa_by_id/...
+  places_autocomplete/...
+  RECORDED_TAXON_IDS.json   # which taxa the deck stage selected when recorded
 ```
 
-## Recording a new fixture
+Filenames are hashes, but each envelope carries its own `endpoint` and `params`,
+so the directory is auditable by reading it:
 
-1. Fetch the real response **once**, by hand, outside the test suite:
+```json
+{
+  "endpoint": "observations",
+  "params": {"taxon_id": 47911, "place_id": 29, "...": "..."},
+  "recorded_by": "scripts/record_fixtures.py",
+  "note": "projected to the fields Sift reads; values are verbatim",
+  "response": {"total_results": 705, "results": ["..."]}
+}
+```
 
-   ```bash
-   curl -s 'https://api.inaturalist.org/v1/taxa/47126' \
-     | python -m json.tool > tests/fixtures/inaturalist/taxa_47126.json
-   ```
+`respx` is not used here: it intercepts `httpx`, and the iNaturalist client is
+`pyinaturalist`, which is built on `requests`. See `docs/decisions.md`,
+2026-08-07.
 
-2. Write a sibling `*.meta.json` recording where it came from, so a future
-   reader can tell whether the fixture has gone stale:
+## Recording fixtures
 
-   ```json
-   {
-     "url": "https://api.inaturalist.org/v1/taxa/47126",
-     "recorded_at": "2026-08-05",
-     "source": "iNaturalist API v1",
-     "notes": "Plantae root taxon; used for the happy-path taxon parse test."
-   }
-   ```
+```bash
+uv run python scripts/record_fixtures.py
+```
 
-3. Trim the payload to what the test actually exercises, but never edit values
-   to make a test pass — a fixture that no longer matches reality is worse than
-   no fixture. If the upstream shape changed, change the code.
+It makes live requests (served from `cache/` when warm) and rewrites the whole
+fixture set. Never run in CI.
+
+Responses are **projected**, not trimmed by hand: `scripts/record_fixtures.py`
+keeps exactly the fields the parsers read and drops the rest, so an observations
+page falls from megabytes to kilobytes. No value is altered, reordered or
+invented, and the projection functions are committed so the reduction is
+auditable. Never hand-edit a fixture to make a test pass — a fixture that no
+longer matches reality is worse than no fixture. If the upstream shape changed,
+change the code and re-record.
+
+The recorder derives which taxa to record by running the real deck stage over
+the recorded `species_counts` response, so the fixture set is exactly what the
+pipeline requests. A hardcoded list would drift the moment observation counts
+reorder the deck.
 
 ## Rules
 

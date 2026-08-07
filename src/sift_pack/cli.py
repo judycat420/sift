@@ -1,325 +1,78 @@
-"""Command-line entry point, and the assembly stage that enforces the drop contract.
+"""Command-line entry point for the pack builder.
 
 WHY THIS MODULE EXISTS
 ----------------------
-This is where a candidate taxon either becomes a card or does not. It is the
-one place in the pack pipeline that consults a domain's `axis1_answer`, and
-therefore the one place that can violate the `None` contract by inventing a
-value for a taxon the domain could not resolve.
-
-So the conversion is written to make that impossible rather than to remember
-not to do it: `_taxon_from` takes an `Axis1Result`, not an optional one, and
-the only caller that can produce one is the branch that already checked for
-`None`. There is no code path from `axis1_answer() -> None` to a `Taxon`.
+It wires the stages together and decides what a human sees. Two rules shape it:
+the artefact goes to stdout or a file while every diagnostic goes to stderr, so
+output stays pipeable; and a command that cannot do its job exits non-zero
+rather than emitting something plausible-looking.
 
 INVARIANT PROTECTED
 -------------------
-Every candidate is either in the manifest with a sourced axis-1 claim, or in
-the drop report with a reason. The two counts always sum to the number
-considered, and `assemble` returns both together so a caller cannot read the
-pack without also being handed what it cost.
-
-In M1 the plants domain resolves nothing, so a build drops every candidate and
-emits a valid, empty pack. That is the designed outcome, not a bug: see
-`sift_pack.domains.plants`.
+No command here invents a value to fill a gap. `build` cannot yet produce a
+manifest — promotion needs a nativity source (M3) and image digests from the
+open-data bucket — so it says so and exits non-zero, rather than emitting an
+empty manifest that would read as "we tried and everything was dropped".
 """
 
 from __future__ import annotations
 
-import hashlib
+import logging
 import sys
-from collections import Counter
-from dataclasses import dataclass
-from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from sift_pack.domains import Axis1Result, TaxonDomain
+from sift_pack.candidates import CandidatePool
 from sift_pack.domains.registry import UnknownDomainError, resolve_domain
-from sift_pack.manifest import AnswerRank, Image, Manifest, SourceRef, Taxon
+from sift_pack.fetch import fetch_pool
+from sift_pack.inat.client import InatClient, InatError
+from sift_pack.inat.places import PLACES_PATH, load_places, refresh_places
+from sift_pack.stats import summarise
 
-__all__ = ["Candidate", "Drop", "DropReport", "app", "assemble", "build"]
+__all__ = ["app", "build", "fetch", "main", "places", "stats"]
 
-_MIN_IMAGES_PER_TAXON = 4
+_log = logging.getLogger("sift_pack")
 
-# The iNaturalist taxonomy snapshot the candidate IDs below are stated against.
-# Placeholder alongside the placeholder pool; M2 records the real export date.
-_PLACEHOLDER_TAXONOMY_DATE = date(2026, 7, 1)
+DEFAULT_CACHE_DIR = Path("cache")
+DEFAULT_WORK_DIR = Path("work")
 
 _EXIT_UNKNOWN_DOMAIN = 2
 _EXIT_DOMAIN_UNAVAILABLE = 3
+_EXIT_NOT_YET_IMPLEMENTED = 4
+_EXIT_INAT_ERROR = 5
+_EXIT_MISSING_POOL = 6
 
 
-@dataclass(frozen=True, slots=True)
-class Candidate:
-    """A taxon under consideration for a pack, before its axis-1 claim is known.
-
-    Deliberately has no axis-1 fields. A candidate is everything Sift knows
-    from the taxonomy and image sources; the claim that makes it a card comes
-    from the domain, and keeping them in separate types means a candidate
-    cannot be handed to the manifest by mistake.
-
-    Attributes:
-        inat_taxon_id: Primary key.
-        scientific_name: Current name; a mutable attribute of the ID.
-        common_names: Vernacular names, most-used first.
-        rank: Taxonomic rank as iNaturalist reports it.
-        genus: Genus name.
-        family: Family name.
-        obs_count: Research-grade observation count.
-        answer_rank: Whether cards may ask for species or must stop at genus.
-        images: Licence-cleared images for this taxon.
-
-    Example:
-        >>> candidate = MICHIGAN_CANDIDATES[0]
-        >>> candidate.scientific_name
-        'Asclepias tuberosa'
-    """
-
-    inat_taxon_id: int
-    scientific_name: str
-    common_names: tuple[str, ...]
-    rank: str
-    genus: str
-    family: str
-    obs_count: int
-    answer_rank: AnswerRank
-    images: tuple[Image, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class Drop:
-    """One candidate that did not make it into the pack, and why.
-
-    Attributes:
-        inat_taxon_id: The candidate's primary key.
-        scientific_name: Carried for readability in the report only.
-        reason: Machine-readable reason code, e.g. `"axis1_undetermined"`.
-        detail: Human-readable elaboration.
-    """
-
-    inat_taxon_id: int
-    scientific_name: str
-    reason: str
-    detail: str
-
-
-@dataclass(frozen=True, slots=True)
-class DropReport:
-    """What a build cost: how many candidates were considered, kept and dropped.
-
-    Returned alongside every manifest so that a silently shrinking pack is
-    impossible to miss (STANDARDS.md rule 5).
-
-    Attributes:
-        considered: How many candidates entered the stage.
-        kept: How many became taxa in the manifest.
-        drops: One entry per dropped candidate, in input order.
-    """
-
-    considered: int
-    kept: int
-    drops: tuple[Drop, ...]
-
-    def counts_by_reason(self) -> dict[str, int]:
-        """Summarise drops by reason code.
-
-        Returns:
-            Reason code to count, ordered most-frequent first.
-
-        Example:
-            >>> report = DropReport(
-            ...     considered=1,
-            ...     kept=0,
-            ...     drops=(Drop(1, "Example one", "axis1_undetermined", "no source"),),
-            ... )
-            >>> report.counts_by_reason()
-            {'axis1_undetermined': 1}
-        """
-        return dict(Counter(drop.reason for drop in self.drops).most_common())
-
-
-def _placeholder_images(taxon_id: int, count: int = _MIN_IMAGES_PER_TAXON) -> tuple[Image, ...]:
-    """Build deterministic stand-in image records for a candidate.
-
-    These are NOT real photos. The digests are derived from the taxon ID rather
-    than from any image bytes, and the attribution fields name nobody, because
-    inventing a photographer to fill a required field is precisely the kind of
-    fabrication this project exists to prevent. M2 replaces this with records
-    read from the iNaturalist open dataset.
-    """
-    images: list[Image] = []
-    for index in range(count):
-        seed = f"sift-m1-placeholder:{taxon_id}:{index}".encode()
-        images.append(
-            Image(
-                sha256=hashlib.sha256(seed).hexdigest(),
-                inat_photo_id=index + 1,
-                taxon_id=taxon_id,
-                license="cc0",
-                photographer_name=None,
-                photographer_login="placeholder-not-a-real-account",
-                observation_url="https://www.inaturalist.org/observations/0",
-                width=1024,
-                height=768,
-                bytes=204_800,
-            )
-        )
-    return tuple(images)
-
-
-# Three Michigan species, chosen so the fixture reads like the real thing: a
-# native prairie forb, an aggressive invasive, and a native the invasive
-# competes with. The names are real; the taxon IDs, observation counts and
-# images are UNVERIFIED PLACEHOLDERS pending the M2 iNaturalist ingest, and
-# nothing downstream may treat them as authoritative. They exist to exercise
-# the assembly path, and in M1 every one of them is dropped before it can
-# reach a manifest.
-MICHIGAN_CANDIDATES: tuple[Candidate, ...] = (
-    Candidate(
-        inat_taxon_id=48662,
-        scientific_name="Asclepias tuberosa",
-        common_names=("butterfly weed", "butterfly milkweed"),
-        rank="species",
-        genus="Asclepias",
-        family="Apocynaceae",
-        obs_count=0,
-        answer_rank="species",
-        images=_placeholder_images(48662),
-    ),
-    Candidate(
-        inat_taxon_id=55849,
-        scientific_name="Alliaria petiolata",
-        common_names=("garlic mustard",),
-        rank="species",
-        genus="Alliaria",
-        family="Brassicaceae",
-        obs_count=0,
-        answer_rank="species",
-        images=_placeholder_images(55849),
-    ),
-    Candidate(
-        inat_taxon_id=61944,
-        scientific_name="Monarda fistulosa",
-        common_names=("wild bergamot",),
-        rank="species",
-        genus="Monarda",
-        family="Lamiaceae",
-        obs_count=0,
-        answer_rank="species",
-        images=_placeholder_images(61944),
-    ),
-)
-
-_INAT_SOURCE = SourceRef(
-    name="iNaturalist",
-    version="v1",
-    retrieved_at=datetime(2026, 8, 6, tzinfo=UTC),
-    url="https://api.inaturalist.org/v1/",
-)
-
-
-def _taxon_from(candidate: Candidate, claim: Axis1Result) -> Taxon:
-    """Convert a candidate plus a resolved claim into a manifest taxon.
-
-    Takes `Axis1Result`, never `Axis1Result | None`: the check happens in
-    `assemble`, and this signature means no caller can skip it.
-    """
-    return Taxon(
-        inat_taxon_id=candidate.inat_taxon_id,
-        scientific_name=candidate.scientific_name,
-        common_names=list(candidate.common_names),
-        rank=candidate.rank,
-        genus=candidate.genus,
-        family=candidate.family,
-        obs_count=candidate.obs_count,
-        axis1_value=claim.value,
-        axis1_source=claim.source,
-        axis1_confidence=claim.confidence,
-        answer_rank=candidate.answer_rank,
-        image_hashes=[image.sha256 for image in candidate.images],
-    )
-
-
-def assemble(
-    domain: TaxonDomain,
-    state: str,
-    candidates: tuple[Candidate, ...],
-    *,
-    built_at: datetime,
-    taxonomy_date: date = _PLACEHOLDER_TAXONOMY_DATE,
-) -> tuple[Manifest, DropReport]:
-    """Assemble candidates into a pack, dropping any whose axis-1 claim is unknown.
-
-    This is the enforcement point for the `None` contract in
-    `sift_pack.domains.TaxonDomain`. A candidate whose `axis1_answer` is `None`
-    is dropped and counted; it is never emitted with a default, a guess, or an
-    empty axis-1 field. Images belonging to dropped candidates are dropped with
-    them, which is what keeps the manifest referentially intact.
+def pool_path(state: str, work_dir: Path = DEFAULT_WORK_DIR) -> Path:
+    """Where a state's candidate pool is written.
 
     Args:
-        domain: The domain supplying axis-1 claims.
-        state: Region code the pack is built for, e.g. `"MI"`.
-        candidates: Taxa to consider, in the order they should appear.
-        built_at: Build timestamp; must be timezone-aware.
-        taxonomy_date: Which iNaturalist taxonomy snapshot the IDs refer to.
+        state: Region code, e.g. `"MI"`.
+        work_dir: Directory holding intermediate build artefacts.
 
     Returns:
-        The validated manifest, and the report of what was dropped to build it.
-        Always both: reading the pack without its drop report is not offered.
-
-    Raises:
-        NotImplementedError: If `domain` is a reserved domain such as birds.
-        pydantic.ValidationError: If the assembled pack is not internally
-            consistent — a bug in this function, not in its inputs.
+        The path, e.g. `work/candidates_MI.json`.
 
     Example:
-        >>> from datetime import UTC, datetime
-        >>> from sift_pack.domains.plants import PlantsDomain
-        >>> manifest, report = assemble(
-        ...     PlantsDomain(),
-        ...     "MI",
-        ...     MICHIGAN_CANDIDATES,
-        ...     built_at=datetime(2026, 8, 6, tzinfo=UTC),
-        ... )
-        >>> len(manifest.taxa), report.counts_by_reason()
-        (0, {'axis1_undetermined': 3})
+        >>> pool_path("MI").as_posix()
+        'work/candidates_MI.json'
     """
-    taxa: list[Taxon] = []
-    images: list[Image] = []
-    drops: list[Drop] = []
+    return work_dir / f"candidates_{state.upper()}.json"
 
-    for candidate in candidates:
-        claim = domain.axis1_answer(candidate.inat_taxon_id, state)
-        if claim is None:
-            drops.append(
-                Drop(
-                    inat_taxon_id=candidate.inat_taxon_id,
-                    scientific_name=candidate.scientific_name,
-                    reason="axis1_undetermined",
-                    detail=(
-                        f"domain {domain.slug!r} could not determine "
-                        f"{domain.axis1_label!r} for state {state!r}"
-                    ),
-                )
-            )
-            continue
-        taxa.append(_taxon_from(candidate, claim))
-        images.extend(candidate.images)
 
-    manifest = Manifest(
-        domain=domain.slug,
-        state=state,
-        built_at=built_at,
-        inat_taxonomy_date=taxonomy_date,
-        sources=[_INAT_SOURCE],
-        taxa=taxa,
-        images=images,
+def _configure_logging(verbose: bool) -> None:
+    """Send progress to stderr so stdout carries only the artefact."""
+    logging.basicConfig(
+        level=logging.INFO if verbose else logging.WARNING,
+        format="%(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+        force=True,
     )
-    report = DropReport(considered=len(candidates), kept=len(taxa), drops=tuple(drops))
-    return manifest, report
+    # pyinaturalist logs every request at INFO, which buries our cache-miss
+    # lines — the ones that actually report what the run cost.
+    logging.getLogger("pyinaturalist").setLevel(logging.WARNING)
 
 
 app = typer.Typer(
@@ -331,67 +84,46 @@ app = typer.Typer(
 
 @app.callback()
 def _root() -> None:
-    """Anchor the CLI as a command group.
-
-    Without a callback, Typer collapses a single-command app into a bare
-    command, so `sift-pack build` would become `sift-pack`. Naming the verb
-    keeps room for the fetch and verify commands M2 adds.
-    """
-
-
-def _emit_report(report: DropReport, state: str) -> None:
-    """Write the drop accounting to stderr, so stdout stays pipeable JSON."""
-    typer.echo(
-        f"considered {report.considered}, kept {report.kept}, dropped {len(report.drops)}",
-        err=True,
-    )
-    for reason, count in report.counts_by_reason().items():
-        typer.echo(f"  dropped {count} for {reason}", err=True)
-    for drop in report.drops:
-        typer.echo(f"    {drop.inat_taxon_id} {drop.scientific_name}: {drop.detail}", err=True)
-    if report.kept == 0:
-        typer.echo(
-            f"pack for {state!r} is empty: nothing could be resolved. "
-            "An empty pack is correct output for a build that resolved nothing.",
-            err=True,
-        )
+    """Anchor the CLI as a command group so each verb keeps its name."""
 
 
 @app.command()
-def build(
+def fetch(  # noqa: PLR0913 - a CLI verb's flags are its interface, not a parameter list
+    *,
     domain: Annotated[str, typer.Option(help="Domain slug, e.g. 'plants'.")],
-    state: Annotated[str, typer.Option(help="Region code, e.g. 'MI'.")],
-    limit: Annotated[int, typer.Option(min=1, help="Maximum candidates to consider.")] = 50,
-    out: Annotated[
-        Path | None,
-        typer.Option(help="Write the manifest here instead of stdout."),
-    ] = None,
+    state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
+    limit: Annotated[int, typer.Option(min=1, help="Candidates to aim for.")] = 250,
+    cache_dir: Annotated[Path, typer.Option(help="Response cache.")] = DEFAULT_CACHE_DIR,
+    work_dir: Annotated[Path, typer.Option(help="Where to write the pool.")] = DEFAULT_WORK_DIR,
+    offline: Annotated[
+        bool, typer.Option(help="Fail on a cache miss instead of fetching.")
+    ] = False,
+    verbose: Annotated[bool, typer.Option(help="Log progress to stderr.")] = True,
 ) -> None:
-    """Build a pack and emit its manifest as JSON.
+    """Fetch a candidate pool from iNaturalist and write it to `work/`.
 
-    The manifest goes to stdout (or `--out`); the drop accounting goes to
-    stderr, so the JSON stays pipeable while the cost of the build stays
-    visible.
+    Re-running is cheap: every response is cached, so a second run makes no
+    network calls and a run killed halfway through resumes by being run again.
 
     Args:
-        domain: Which domain to build. Unknown slugs exit 2 rather than
-            falling back to a default.
-        state: Region code the pack is for.
-        limit: Maximum number of candidates to consider.
-        out: Optional path to write the manifest to.
+        domain: Which domain to fetch for.
+        state: US state code the pool is scoped to.
+        limit: How many candidates to aim for.
+        cache_dir: Where cached API responses live.
+        work_dir: Where the pool is written.
+        offline: When set, a cache miss is an error rather than a request.
+        verbose: Log progress to stderr.
 
     Raises:
-        typer.Exit: Code 2 for an unknown domain, code 3 for a domain that is
-            known but not implemented. Never exits 0 having guessed.
+        typer.Exit: 2 for an unknown domain, 3 for a domain that is known but
+            unimplemented, 5 for an iNaturalist or place-table failure.
 
     Example:
-        Run from a shell:
-
         >>> from typer.testing import CliRunner
-        >>> result = CliRunner().invoke(app, ["build", "--domain", "plants", "--state", "MI"])
-        >>> result.exit_code
-        0
+        >>> CliRunner().invoke(app, ["fetch", "--domain", "birbs", "--state", "MI"]).exit_code
+        2
     """
+    _configure_logging(verbose)
     try:
         resolved = resolve_domain(domain)
     except UnknownDomainError as exc:
@@ -399,24 +131,153 @@ def build(
         raise typer.Exit(code=_EXIT_UNKNOWN_DOMAIN) from exc
 
     try:
-        manifest, report = assemble(
-            resolved,
-            state,
-            MICHIGAN_CANDIDATES[:limit],
-            built_at=datetime.now(UTC),
-        )
+        place_id = load_places().place_id_for(state)
+    except InatError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=_EXIT_INAT_ERROR) from exc
+
+    client = InatClient(cache_dir, offline=offline)
+    try:
+        pool = fetch_pool(client, resolved, state.upper(), place_id, limit)
     except NotImplementedError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=_EXIT_DOMAIN_UNAVAILABLE) from exc
+    except InatError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=_EXIT_INAT_ERROR) from exc
 
-    payload = manifest.model_dump_json(indent=2)
-    if out is None:
-        typer.echo(payload)
-    else:
-        out.write_text(payload + "\n", encoding="utf-8")
-        typer.echo(f"wrote {out}", err=True)
+    destination = pool_path(state, work_dir)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(pool.model_dump_json(indent=2) + "\n", encoding="utf-8")
 
-    _emit_report(report, state)
+    typer.echo(f"wrote {destination}", err=True)
+    typer.echo(
+        f"{len(pool.candidates)} candidates, {len(pool.dropped)} dropped, {client.stats.summary()}",
+        err=True,
+    )
+
+
+@app.command()
+def stats(
+    state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
+    work_dir: Annotated[Path, typer.Option(help="Where the pool lives.")] = DEFAULT_WORK_DIR,
+) -> None:
+    """Summarise a fetched candidate pool.
+
+    Args:
+        state: Which state's pool to describe.
+        work_dir: Directory holding the pool.
+
+    Raises:
+        typer.Exit: 6 when no pool has been fetched for that state.
+
+    Example:
+        >>> from typer.testing import CliRunner
+        >>> result = CliRunner().invoke(app, ["stats", "--state", "ZZ"])
+        >>> result.exit_code
+        6
+    """
+    source = pool_path(state, work_dir)
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError as exc:
+        typer.echo(
+            f"error: no candidate pool at {source}. Run `sift-pack fetch --domain "
+            f"plants --state {state}` first.",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_MISSING_POOL) from exc
+
+    pool = CandidatePool.model_validate_json(text)
+    typer.echo(f"pool: {source} ({pool.domain}, {pool.state}, place_id {pool.place_id})", err=True)
+    typer.echo(summarise(pool).render())
+
+
+@app.command()
+def places(
+    refresh: Annotated[
+        bool, typer.Option(help="Re-resolve all 50 states against the live API.")
+    ] = False,
+    cache_dir: Annotated[Path, typer.Option(help="Response cache.")] = DEFAULT_CACHE_DIR,
+    path: Annotated[Path, typer.Option(help="Place table location.")] = PLACES_PATH,
+    verbose: Annotated[bool, typer.Option(help="Log progress to stderr.")] = True,
+) -> None:
+    """Show or regenerate the committed state-to-place-ID table.
+
+    `--refresh` makes 50 live requests and is run by hand, never in CI: the
+    answers change essentially never, and the table is committed precisely so
+    that no build depends on autocomplete ranking.
+
+    Args:
+        refresh: Re-resolve every state and rewrite the table.
+        cache_dir: Where cached API responses live.
+        path: Where the table is read from and written to.
+        verbose: Log progress to stderr.
+
+    Raises:
+        typer.Exit: 5 if the table cannot be read, or a state fails to resolve.
+
+    Example:
+        >>> from typer.testing import CliRunner
+        >>> CliRunner().invoke(app, ["places"]).exit_code
+        0
+    """
+    _configure_logging(verbose)
+    try:
+        table = refresh_places(InatClient(cache_dir), path) if refresh else load_places(path)
+    except InatError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=_EXIT_INAT_ERROR) from exc
+
+    typer.echo(f"{len(table.states)} states in {path}", err=True)
+    for state in table.states:
+        typer.echo(f"{state.code}\t{state.place_id}\t{state.name}")
+
+
+@app.command()
+def build(
+    state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
+    work_dir: Annotated[Path, typer.Option(help="Where the pool lives.")] = DEFAULT_WORK_DIR,
+) -> None:
+    """Promote a candidate pool into a manifest. Not implemented yet.
+
+    Promotion needs two things that do not exist at M2, and this command exits
+    non-zero rather than emitting an empty manifest. An empty manifest would be
+    a specific claim — "we tried to promote every candidate and none qualified"
+    — and that claim would be false. Nothing tried.
+
+    Args:
+        state: Which state's pool to promote.
+        work_dir: Directory holding the pool.
+
+    Raises:
+        typer.Exit: 4 always, until M3. 6 when there is no pool to promote.
+
+    Example:
+        >>> from typer.testing import CliRunner
+        >>> CliRunner().invoke(app, ["build", "--state", "ZZ"]).exit_code
+        6
+    """
+    source = pool_path(state, work_dir)
+    if not source.exists():
+        typer.echo(
+            f"error: no candidate pool at {source}. Run `sift-pack fetch` first.",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_MISSING_POOL)
+
+    pool = CandidatePool.model_validate_json(source.read_text(encoding="utf-8"))
+    typer.echo(
+        f"error: cannot build a manifest yet. {source} holds {len(pool.candidates)} "
+        "candidates, but promotion requires two things M2 does not have:\n"
+        "  1. a nativity claim per taxon, with a source — USDA PLANTS, wired in M3\n"
+        "  2. sha256 and byte size per image, which only exist once the bytes are\n"
+        "     fetched from the inaturalist-open-data bucket\n"
+        "Emitting an empty manifest instead would claim promotion ran and rejected\n"
+        "everything. It did not run.",
+        err=True,
+    )
+    raise typer.Exit(code=_EXIT_NOT_YET_IMPLEMENTED)
 
 
 def main() -> None:

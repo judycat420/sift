@@ -28,6 +28,14 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
   a courtesy target of ~1 request/second sustained; bulk work is expected to
   move to the Open Dataset instead. A descriptive `User-Agent` with contact
   details is expected.
+- **How Sift uses it (as of M2):** four endpoints only, listed in
+  `sift_pack.inat.client.Endpoint` — `species_counts` (rank a place's taxa),
+  `observations` (licence-filtered photo selection), `taxa_by_id` (genus and
+  family from the ancestor list), and `places_autocomplete` (state to place ID,
+  resolved once into the committed `data/places.json`). Rate limiting is
+  `pyinaturalist`'s default implementation of iNaturalist's published guidance,
+  not a hand-rolled limiter. Every response is cached on disk, so a re-run costs
+  nothing. A full 250-candidate state fetch is roughly 280 requests.
 - **Known limitations:**
   - Crowd-sourced. Only "research grade" observations have community
     identification agreement; everything else is one person's opinion and must
@@ -43,6 +51,16 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
   - Many photos are NC-licensed and therefore excluded by our licence policy;
     expect a substantial share of taxa to have no usable image.
   - No edibility, toxicity or medicinal data. Do not attempt to derive it.
+  - `establishment_means` reports native/introduced status per place, and Sift
+    deliberately does not use it. It is curator-maintained, sparsely populated,
+    and disagrees with USDA PLANTS; nativity comes from USDA (M3). See
+    `docs/decisions.md`, 2026-08-07.
+  - `num_identification_agreements` counts agreements at fetch time and can fall
+    as well as rise when identifications are withdrawn. Sift records the value
+    it saw, with the fetch timestamp, rather than treating it as stable.
+  - Observation photos carry per-photo licences that differ from the
+    observation's own licence. Sift filters on the photo licence, and re-checks
+    it client-side, because a server-side filter that stops working is silent.
 
 ## iNaturalist Open Dataset (AWS Open Data)
 

@@ -102,3 +102,76 @@ will be much smaller than the candidate pool, especially early — the M1 plants
 build resolves nothing and emits zero taxa — and that every caller carries the
 obligation to handle `None`. An empty deck is the correct output for a build
 that knows nothing.
+
+### 2026-08-07 — The pipeline splits: `CandidatePool` from iNaturalist, `Manifest` after promotion
+
+M1 proved a `Manifest` cannot be built from iNaturalist data alone: `Taxon`
+requires an axis-1 source, and iNaturalist does not know whether a plant is
+native to Michigan. The obvious fix was to relax `Taxon` so it could be built
+half-finished and completed later. We rejected that, because it would make the
+unattributed state representable everywhere and forever in order to solve a
+problem that exists in exactly one stage of one pipeline — and the whole point
+of M1 was to make that state unrepresentable. Instead the pipeline splits.
+`CandidatePool` holds what iNaturalist can honestly assert; `Manifest` holds
+what a learner is shown; promotion between them is where a sourced claim is
+attached, and it is the only path by which a nativity value can come to exist.
+`CandidateTaxon` therefore has no axis-1 field under any name — not nullable,
+not empty-string, absent — including iNaturalist's own `establishment_means`,
+which reports native/introduced per place and would smuggle an unsourced claim
+in through the back door. It is curator-maintained, sparsely populated, and
+disagrees with USDA. The cost is two schemas to keep in step, an intermediate
+artefact on disk, and a promotion step that must be written; the benefit is
+that no half-built taxon exists anywhere in the system.
+
+### 2026-08-07 — `CandidatePhoto` carries no `sha256` or `bytes`
+
+`manifest.Image` requires a content hash and a byte size; `CandidatePhoto`, the
+photo record inside a candidate pool, has neither. The iNaturalist API does not
+return them — they can only be computed from the image bytes, which come from
+the open-data S3 bucket (2026-08-05), a phase that has not been built. The
+alternatives were to make the fields nullable on `Image`, which would loosen the
+runtime contract for the benefit of an intermediate stage and is forbidden by
+STANDARDS.md rule 8, or to synthesise a placeholder digest, which is what M1 did
+with its fabricated candidate pool and is the same class of error as inventing a
+nativity label. So the field is absent until the bytes exist, exactly as the
+axis-1 field is absent until a source exists. The cost is that promotion must
+fetch bytes before it can emit a manifest, and that `sift-pack build` cannot run
+at M2 at all; it exits non-zero saying so rather than emitting an empty manifest,
+which would falsely claim that promotion ran and rejected everything.
+
+### 2026-08-07 — Taxa below 50 research-grade observations are dropped
+
+A taxon needs at least 50 research-grade observations in the target place to
+enter a candidate pool. The threshold is doing two jobs. It is a usefulness
+filter: a pack should teach the plants somebody will actually meet, and a taxon
+with a dozen records in a whole state is not one of them. It is also a
+reliability filter, and that is the more important one — an observation count is
+a proxy for how many people have looked at that taxon's records, so a rarely
+observed taxon is also a rarely reviewed one, and its "research grade"
+identifications rest on far fewer eyes. Fifty is a judgement, not a derived
+value: it is roughly where Michigan's plant list stops being dominated by
+garden escapes and single-record curiosities. The cost is that genuinely rare
+native plants — often the most interesting ones — are excluded, and that the
+threshold interacts with iNaturalist's geographic bias, so an under-observed
+region will qualify fewer taxa than a well-observed one with the same flora.
+Revisit it per-region if packs come out thin. Tightening it needs no ADR;
+lowering it does (rule 8).
+
+### 2026-08-07 — Tests mock at the cache seam, not with respx
+
+STANDARDS.md rule 6 names `respx` as the mocking mechanism. `respx` intercepts
+`httpx`, and the iNaturalist client is `pyinaturalist`, which is built on
+`requests` — respx cannot see its traffic at all. We considered adding
+`responses` or `requests-mock` to intercept at the transport layer, and rejected
+it: the client already has a disk cache whose envelope format is exactly what a
+recorded fixture needs to be, so pointing a real `InatClient` at
+`tests/fixtures/inat_cache/` with `offline=True` exercises the production code
+path — key derivation, envelope parsing, response normalisation — with no HTTP
+library in the loop at all. That is strictly stronger than mocking transport:
+there is no socket to intercept, so there is nothing to get wrong. The socket
+blocker in `conftest.py` remains the backstop, and rule 6's actual requirement —
+tests never touch the network, fixtures are recorded from real responses — is
+met in full. `respx` stays the required mechanism for any future `httpx` client.
+The cost is that fixtures are keyed by hash rather than by readable filename;
+each envelope records its endpoint and parameters so a cache directory is still
+auditable by reading it.

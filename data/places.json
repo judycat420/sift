@@ -1,0 +1,254 @@
+{
+  "states": [
+    {
+      "code": "AK",
+      "name": "Alaska",
+      "place_id": 6
+    },
+    {
+      "code": "AL",
+      "name": "Alabama",
+      "place_id": 19
+    },
+    {
+      "code": "AR",
+      "name": "Arkansas",
+      "place_id": 36
+    },
+    {
+      "code": "AZ",
+      "name": "Arizona",
+      "place_id": 40
+    },
+    {
+      "code": "CA",
+      "name": "California",
+      "place_id": 14
+    },
+    {
+      "code": "CO",
+      "name": "Colorado",
+      "place_id": 34
+    },
+    {
+      "code": "CT",
+      "name": "Connecticut",
+      "place_id": 49
+    },
+    {
+      "code": "DE",
+      "name": "Delaware",
+      "place_id": 4
+    },
+    {
+      "code": "FL",
+      "name": "Florida",
+      "place_id": 21
+    },
+    {
+      "code": "GA",
+      "name": "Georgia",
+      "place_id": 23
+    },
+    {
+      "code": "HI",
+      "name": "Hawaii",
+      "place_id": 11
+    },
+    {
+      "code": "IA",
+      "name": "Iowa",
+      "place_id": 24
+    },
+    {
+      "code": "ID",
+      "name": "Idaho",
+      "place_id": 22
+    },
+    {
+      "code": "IL",
+      "name": "Illinois",
+      "place_id": 35
+    },
+    {
+      "code": "IN",
+      "name": "Indiana",
+      "place_id": 20
+    },
+    {
+      "code": "KS",
+      "name": "Kansas",
+      "place_id": 25
+    },
+    {
+      "code": "KY",
+      "name": "Kentucky",
+      "place_id": 26
+    },
+    {
+      "code": "LA",
+      "name": "Louisiana",
+      "place_id": 27
+    },
+    {
+      "code": "MA",
+      "name": "Massachusetts",
+      "place_id": 2
+    },
+    {
+      "code": "MD",
+      "name": "Maryland",
+      "place_id": 39
+    },
+    {
+      "code": "ME",
+      "name": "Maine",
+      "place_id": 17
+    },
+    {
+      "code": "MI",
+      "name": "Michigan",
+      "place_id": 29
+    },
+    {
+      "code": "MN",
+      "name": "Minnesota",
+      "place_id": 38
+    },
+    {
+      "code": "MO",
+      "name": "Missouri",
+      "place_id": 28
+    },
+    {
+      "code": "MS",
+      "name": "Mississippi",
+      "place_id": 37
+    },
+    {
+      "code": "MT",
+      "name": "Montana",
+      "place_id": 16
+    },
+    {
+      "code": "NC",
+      "name": "North Carolina",
+      "place_id": 30
+    },
+    {
+      "code": "ND",
+      "name": "North Dakota",
+      "place_id": 13
+    },
+    {
+      "code": "NE",
+      "name": "Nebraska",
+      "place_id": 3
+    },
+    {
+      "code": "NH",
+      "name": "New Hampshire",
+      "place_id": 41
+    },
+    {
+      "code": "NJ",
+      "name": "New Jersey",
+      "place_id": 51
+    },
+    {
+      "code": "NM",
+      "name": "New Mexico",
+      "place_id": 9
+    },
+    {
+      "code": "NV",
+      "name": "Nevada",
+      "place_id": 50
+    },
+    {
+      "code": "NY",
+      "name": "New York",
+      "place_id": 48
+    },
+    {
+      "code": "OH",
+      "name": "Ohio",
+      "place_id": 31
+    },
+    {
+      "code": "OK",
+      "name": "Oklahoma",
+      "place_id": 12
+    },
+    {
+      "code": "OR",
+      "name": "Oregon",
+      "place_id": 10
+    },
+    {
+      "code": "PA",
+      "name": "Pennsylvania",
+      "place_id": 42
+    },
+    {
+      "code": "RI",
+      "name": "Rhode Island",
+      "place_id": 8
+    },
+    {
+      "code": "SC",
+      "name": "South Carolina",
+      "place_id": 43
+    },
+    {
+      "code": "SD",
+      "name": "South Dakota",
+      "place_id": 44
+    },
+    {
+      "code": "TN",
+      "name": "Tennessee",
+      "place_id": 45
+    },
+    {
+      "code": "TX",
+      "name": "Texas",
+      "place_id": 18
+    },
+    {
+      "code": "UT",
+      "name": "Utah",
+      "place_id": 52
+    },
+    {
+      "code": "VA",
+      "name": "Virginia",
+      "place_id": 7
+    },
+    {
+      "code": "VT",
+      "name": "Vermont",
+      "place_id": 47
+    },
+    {
+      "code": "WA",
+      "name": "Washington",
+      "place_id": 46
+    },
+    {
+      "code": "WI",
+      "name": "Wisconsin",
+      "place_id": 32
+    },
+    {
+      "code": "WV",
+      "name": "West Virginia",
+      "place_id": 33
+    },
+    {
+      "code": "WY",
+      "name": "Wyoming",
+      "place_id": 15
+    }
+  ]
+}
