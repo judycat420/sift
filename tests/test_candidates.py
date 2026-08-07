@@ -50,6 +50,7 @@ def _photo(observation_id: int, taxon_id: int = 47911, **overrides: Any) -> Cand
         "width": 1024,
         "height": 768,
         "identification_agreements": 2,
+        "month_bucket": "A",
     }
     fields.update(overrides)
     return CandidatePhoto(**fields)
@@ -64,8 +65,10 @@ def _taxon(taxon_id: int = 47911, **overrides: Any) -> CandidateTaxon:  # noqa: 
         "genus": "Asclepias",
         "family": "Apocynaceae",
         "obs_count": 9108,
-        "identification_agreement": 2,
-        "images": [_photo(n, taxon_id) for n in range(1, 5)],
+        "min_identification_agreement": 2,
+        "months_represented": 1,
+        "distinct_observers": 4,
+        "images": [_photo(n, taxon_id, photographer_login=f"obs{n}") for n in range(1, 5)],
     }
     fields.update(overrides)
     return CandidateTaxon(**fields)
@@ -106,7 +109,9 @@ def test_candidate_taxon_field_set_is_exactly_this() -> None:
         "genus",
         "family",
         "obs_count",
-        "identification_agreement",
+        "min_identification_agreement",
+        "months_represented",
+        "distinct_observers",
         "images",
     }
 
@@ -141,6 +146,7 @@ def test_candidate_photo_field_set_is_exactly_this() -> None:
         "width",
         "height",
         "identification_agreements",
+        "month_bucket",
     }
 
 
@@ -157,22 +163,29 @@ def test_candidate_photo_has_no_digest_field() -> None:
 @pytest.mark.parametrize("count", [0, 1, 2, 3])
 def test_fewer_than_four_photos_is_rejected(count: int) -> None:
     with pytest.raises(ValidationError, match="images"):
-        _taxon(images=[_photo(n) for n in range(1, count + 1)])
+        _taxon(images=[_photo(n, photographer_login=f"obs{n}") for n in range(1, count + 1)])
 
 
 def test_more_than_eight_photos_is_rejected() -> None:
     with pytest.raises(ValidationError, match="images"):
-        _taxon(images=[_photo(n) for n in range(1, 10)])
+        _taxon(images=[_photo(n, photographer_login=f"obs{n}") for n in range(1, 10)])
 
 
 def test_photos_must_come_from_distinct_observations() -> None:
     with pytest.raises(ValidationError, match="multiple photos from one observation"):
-        _taxon(images=[_photo(1), _photo(1), _photo(2), _photo(3)])
+        _taxon(
+            images=[
+                _photo(1, photographer_login="a"),
+                _photo(1, photographer_login="b"),
+                _photo(2, photographer_login="c"),
+                _photo(3, photographer_login="d"),
+            ]
+        )
 
 
 def test_photos_must_belong_to_their_taxon() -> None:
-    photos = [_photo(n) for n in range(1, 4)]
-    photos.append(_photo(9, taxon_id=99999))
+    photos = [_photo(n, photographer_login=f"obs{n}") for n in range(1, 4)]
+    photos.append(_photo(9, taxon_id=99999, photographer_login="obs9"))
     with pytest.raises(ValidationError, match="another taxon"):
         _taxon(images=photos)
 

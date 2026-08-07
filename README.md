@@ -7,8 +7,9 @@ every user-facing claim attached to the source it came from and a confidence in
 it. Where a claim cannot be attributed, it is dropped and counted — never
 guessed.
 
-Status: **M2 — iNaturalist ingest**. `fetch` produces real candidate pools;
-`build` cannot yet produce a manifest and says so rather than guessing.
+Status: **M2.1 — iNaturalist ingest, corrected**. `fetch` produces real
+candidate pools, sampled across the seasons; `build` cannot yet produce a
+manifest and says so rather than guessing.
 
 ## Getting started
 
@@ -16,13 +17,15 @@ Status: **M2 — iNaturalist ingest**. `fetch` produces real candidate pools;
 make install   # uv sync, including dev dependencies
 make check     # install + lint + typecheck + test — what CI runs
 
-uv run sift-pack fetch --domain plants --state MI --limit 250
+uv run sift-pack fetch --domain plants --state MI
 uv run sift-pack stats --state MI
 ```
 
 `fetch` writes `work/candidates_MI.json` and caches every API response under
 `cache/`, so a second run makes zero network calls and an interrupted run
 resumes simply by being run again. Progress and drop accounting go to stderr.
+A full state fetch is about 1200 requests and twenty minutes; only one may run
+at a time, enforced by `work/.fetch.lock`.
 
 `build` exits 4: promotion needs a nativity claim with a source (USDA PLANTS,
 M3) and image digests from the open-data bucket. It refuses to emit an empty
@@ -42,6 +45,20 @@ iNaturalist ──fetch──> CandidatePool ──promote──> Manifest ─�
 name. That is what makes promotion the only path by which one can exist, and
 promotion requires a source by construction.
 
+## Photo selection
+
+Photos are what a learner actually studies, so they are sampled deliberately
+rather than taken in whatever order the API returns them. Each taxon is queried
+across four seasonal buckets — spring, early summer, late summer, autumn/winter
+— and selection round-robins across them, so a plant is shown in flower *and* in
+fruit *and* bare. No observer may supply more than two of a taxon's photos, and
+no observation more than one. A taxon that cannot reach four photos under all of
+those rules is dropped rather than padded.
+
+Each candidate records `months_represented`, `distinct_observers` and
+`min_identification_agreement` — quality signals M7 surfaces to the learner, and
+which the schema recomputes from the photos rather than trusting.
+
 ## Repository layout
 
 ```
@@ -52,8 +69,10 @@ src/sift_pack/           The build half: fetches, filters, assembles packs
     client.py            Disk cache + rate limiting + response normalisation
     places.py            State -> place_id, resolved once into data/places.json
     deck.py              Which taxa are worth learning in a place
-    photos.py            Licence-cleared photos, one per observation
+    photos.py            Month-stratified photo sampling and selection policy
+    projections.py       What Sift reads from each response; the cache stores this
   fetch.py               Orchestrates the three stages into one pool
+  lock.py                One fetch at a time; Sift is a guest on a public API
   stats.py               What a pool actually contains
   domains/               The one axis on which plants/birds/pollinators differ
   cli.py                 `sift-pack fetch | stats | places | build`

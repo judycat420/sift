@@ -43,6 +43,7 @@ alarms. Separate files, separate stability guarantees.
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from typing import Literal
 
@@ -51,6 +52,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sift_pack.manifest import License, SourceRef
 
 __all__ = [
+    "MAX_PHOTOS_PER_CANDIDATE",
+    "MAX_PHOTOS_PER_OBSERVER",
     "MIN_PHOTOS_PER_CANDIDATE",
     "CandidatePhoto",
     "CandidatePool",
@@ -64,6 +67,13 @@ MIN_PHOTOS_PER_CANDIDATE = 4
 
 MAX_PHOTOS_PER_CANDIDATE = 8
 """Above this we stop collecting; more photos cost bytes without teaching more."""
+
+MAX_PHOTOS_PER_OBSERVER = 2
+"""No observer may supply more than this many of one taxon's photos.
+
+One person's photos share a camera, a habitat, a season and an eye. Four photos
+from one observer teach that observer's way of seeing a plant, which is not the
+same as teaching the plant."""
 
 DropReason = Literal[
     "rank_not_species",
@@ -129,6 +139,7 @@ class CandidatePhoto(_Frozen):
         ...     width=1536,
         ...     height=2048,
         ...     identification_agreements=1,
+        ...     month_bucket="B",
         ... )
         >>> photo.license
         'cc0'
@@ -157,6 +168,14 @@ class CandidatePhoto(_Frozen):
     height: int = Field(ge=1, description="Original pixel height.")
     identification_agreements: int = Field(
         ge=0, description="Agreeing IDs on the source observation, at fetch time."
+    )
+    month_bucket: str = Field(
+        min_length=1,
+        description=(
+            "Which seasonal bucket the source observation was sampled from. "
+            "Recorded so that seasonal spread is auditable in the finished pool "
+            "rather than merely intended at selection time."
+        ),
     )
 
 
@@ -197,12 +216,31 @@ class CandidateTaxon(_Frozen):
     )
     family: str = Field(min_length=1, description="Family name, read from the taxon's ancestors.")
     obs_count: int = Field(ge=0, description="Research-grade observations in this place.")
-    identification_agreement: int = Field(
+    min_identification_agreement: int = Field(
         ge=0,
         description=(
             "Minimum agreeing-ID count across the selected photos' observations. "
             "The floor rather than the mean, so one heavily-confirmed observation "
-            "cannot mask several shaky ones."
+            "cannot mask several shaky ones. A learner-facing quality signal: M7 "
+            "surfaces it so somebody can tell a well-confirmed card from a thin one."
+        ),
+    )
+    months_represented: int = Field(
+        ge=1,
+        le=4,
+        description=(
+            "How many of the four seasonal buckets the selected photos span. A "
+            "taxon shown only in flower is a taxon nobody can identify in August. "
+            "A learner-facing quality signal (M7): a card built from one season "
+            "is teaching less than its photo count suggests."
+        ),
+    )
+    distinct_observers: int = Field(
+        ge=1,
+        description=(
+            "How many different people took the selected photos. Guards against "
+            "learning one person's camera and habitat rather than the plant. A "
+            "learner-facing quality signal (M7)."
         ),
     )
     images: list[CandidatePhoto] = Field(
@@ -228,6 +266,49 @@ class CandidateTaxon(_Frozen):
             raise ValueError(message)
         if any(photo.taxon_id != self.inat_taxon_id for photo in self.images):
             message = f"taxon {self.inat_taxon_id} carries photos belonging to another taxon"
+            raise ValueError(message)
+        return self
+
+    @model_validator(mode="after")
+    def _check_quality_signals_match_the_photos(self) -> CandidateTaxon:
+        """Reject a candidate whose recorded signals disagree with its photos.
+
+        The three signals are learner-facing claims about the pack's quality, so
+        they are recomputed here rather than trusted. A stated four-season spread
+        that the photos do not support would be exactly the kind of confident,
+        unverifiable claim this project exists to prevent — and unlike a nativity
+        label, this one can be checked against the record carrying it.
+        """
+        errors: list[str] = []
+
+        observers = Counter(photo.photographer_login for photo in self.images)
+        over_cap = sorted(
+            login for login, count in observers.items() if count > MAX_PHOTOS_PER_OBSERVER
+        )
+        if over_cap:
+            errors.append(f"observers over the {MAX_PHOTOS_PER_OBSERVER}-photo cap: {over_cap}")
+        if self.distinct_observers != len(observers):
+            errors.append(
+                f"distinct_observers is {self.distinct_observers}, photos show {len(observers)}"
+            )
+
+        buckets = {photo.month_bucket for photo in self.images}
+        if self.months_represented != len(buckets):
+            errors.append(
+                f"months_represented is {self.months_represented}, photos span {len(buckets)}"
+            )
+
+        floor = min(photo.identification_agreements for photo in self.images)
+        if self.min_identification_agreement != floor:
+            errors.append(
+                f"min_identification_agreement is {self.min_identification_agreement}, "
+                f"photos floor at {floor}"
+            )
+
+        if errors:
+            message = f"taxon {self.inat_taxon_id} signals disagree with its photos: " + "; ".join(
+                errors
+            )
             raise ValueError(message)
         return self
 
@@ -279,6 +360,15 @@ class CandidatePool(_Frozen):
             "Every taxon considered and rejected, with a reason. Never elided: a "
             "pool that kept 40 of 300 must show the other 260 (STANDARDS.md rule 5)."
         )
+    )
+    bucket_observations: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Observations each seasonal bucket returned across the whole fetch. "
+            "A bucket that yields nothing for a region is a fact about the region "
+            "worth seeing, not an error — and a bucket that yields nothing at all "
+            "is a broken query worth catching."
+        ),
     )
 
     @model_validator(mode="after")

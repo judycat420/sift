@@ -1,6 +1,6 @@
 {
  "endpoint": "taxa_by_id",
- "note": "projected to the fields Sift reads; values are verbatim",
+ "fetched_at": "2026-08-07T03:23:26.348436+00:00",
  "params": {
   "ids": [
    47911,
@@ -11,7 +11,7 @@
    49288
   ]
  },
- "recorded_by": "scripts/record_fixtures.py",
+ "projection_version": 1,
  "response": {
   "results": [
    {

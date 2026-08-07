@@ -43,8 +43,10 @@ def _write_pool(work_dir: Path, state: str = "MI") -> Path:
                 genus="Asclepias",
                 family="Apocynaceae",
                 obs_count=9108,
-                identification_agreement=2,
-                images=[_photo(n, 47911) for n in range(1, 6)],
+                min_identification_agreement=2,
+                months_represented=1,
+                distinct_observers=5,
+                images=[_photo(n, 47911, photographer_login=f"a{n}") for n in range(1, 6)],
             ),
             CandidateTaxon(
                 inat_taxon_id=52391,
@@ -54,8 +56,10 @@ def _write_pool(work_dir: Path, state: str = "MI") -> Path:
                 genus="Pinus",
                 family="Pinaceae",
                 obs_count=6426,
-                identification_agreement=3,
-                images=[_photo(n, 52391) for n in range(10, 17)],
+                min_identification_agreement=2,
+                months_represented=1,
+                distinct_observers=7,
+                images=[_photo(n, 52391, photographer_login=f"b{n}") for n in range(10, 17)],
             ),
         ],
         dropped=[
@@ -99,9 +103,12 @@ def test_stats_reports_kept_dropped_licences_and_distributions(tmp_path: Path) -
     assert "cc0:" in out
     assert "4-5 images: 1 taxa" in out
     assert "6-8 images: 1 taxa" in out
-    assert "median:" in out
-    assert "p10:" in out
-    assert "median identification agreement:" in out
+    assert "distributions:" in out
+    assert "months_represented" in out
+    assert "distinct_observers" in out
+    assert "min_identification_agmt" in out
+    assert "month buckets:" in out
+    assert "cache on disk:" in out
 
 
 def test_stats_reports_every_drop_reason_even_at_zero(tmp_path: Path) -> None:

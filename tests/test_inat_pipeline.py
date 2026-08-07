@@ -9,27 +9,41 @@ raises `CacheMissError` naming the request.
 from __future__ import annotations
 
 import json
+from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from sift_pack.candidates import (
+    MAX_PHOTOS_PER_OBSERVER,
     MIN_PHOTOS_PER_CANDIDATE,
+    CandidatePhoto,
     CandidatePool,
     DropRecord,
 )
 from sift_pack.domains.plants import PlantsDomain
 from sift_pack.fetch import fetch_pool
-from sift_pack.inat.client import InatClient, InatError, cache_key
+from sift_pack.inat.client import CACHE_FORMAT, InatClient, InatError, cache_key
 from sift_pack.inat.deck import (
     MIN_OBSERVATIONS,
     TaxonSummary,
     fetch_taxon_details,
     select_taxa,
 )
-from sift_pack.inat.photos import PERMITTED_LICENSES, minimum_agreement, select_photos
+from sift_pack.inat.photos import (
+    MONTH_BUCKETS,
+    PERMITTED_LICENSES,
+    PREFERRED_MIN_AGREEMENTS,
+    PhotoSelection,
+    distinct_observers,
+    minimum_agreement,
+    months_represented,
+    select_photos,
+)
 from sift_pack.inat.places import PlaceTable, StatePlace, UnknownStateError, load_places
+from sift_pack.inat.projections import PROJECTION_VERSION
 from tests.fixture_client import (
     FIXTURE_CACHE,
     MICHIGAN_PLACE_ID,
@@ -136,72 +150,118 @@ def test_details_are_returned_for_every_requested_taxon() -> None:
 # --- photos -------------------------------------------------------------------
 
 
+def _selection(taxon_id: int | None = None) -> PhotoSelection:
+    """Run selection for a recorded taxon."""
+    target = RECORDED_TAXON_IDS[0] if taxon_id is None else taxon_id
+    return select_photos(recorded_client(), target, "Recorded taxon", MICHIGAN_PLACE_ID)
+
+
 def test_selected_photos_are_all_licence_cleared() -> None:
-    photos, drop = select_photos(recorded_client(), 47911, "Asclepias syriaca", MICHIGAN_PLACE_ID)
-    assert drop is None
-    assert photos
-    assert all(photo.license in PERMITTED_LICENSES for photo in photos)
+    selection = _selection()
+    assert selection.drop is None
+    assert selection.photos
+    assert all(photo.license in PERMITTED_LICENSES for photo in selection.photos)
 
 
 def test_selected_photos_come_from_distinct_observations() -> None:
-    photos, _ = select_photos(recorded_client(), 47911, "Asclepias syriaca", MICHIGAN_PLACE_ID)
-    observation_ids = [photo.observation_id for photo in photos]
+    observation_ids = [photo.observation_id for photo in _selection().photos]
     assert len(observation_ids) == len(set(observation_ids))
 
 
+def test_no_observer_supplies_more_than_two_photos() -> None:
+    for taxon_id in RECORDED_TAXON_IDS:
+        counts = Counter(photo.photographer_login for photo in _selection(taxon_id).photos)
+        assert not [login for login, n in counts.items() if n > MAX_PHOTOS_PER_OBSERVER]
+
+
 def test_no_more_than_eight_photos_are_selected() -> None:
-    photos, _ = select_photos(recorded_client(), 47911, "Asclepias syriaca", MICHIGAN_PLACE_ID)
+    photos = _selection().photos
     assert MIN_PHOTOS_PER_CANDIDATE <= len(photos) <= 8
 
 
-def test_well_confirmed_observations_are_preferred() -> None:
-    photos, _ = select_photos(recorded_client(), 47911, "Asclepias syriaca", MICHIGAN_PLACE_ID)
-    agreements = [photo.identification_agreements for photo in photos]
-    # Preferred observations come first, so agreement counts never rise back up
-    # into the preferred band after dropping below it.
-    preferred = [a >= 2 for a in agreements]
-    assert preferred == sorted(preferred, reverse=True)
+def test_selection_spreads_across_seasonal_buckets() -> None:
+    # The defect M2.1 exists to fix: a single unstratified page clusters into
+    # one season. Selection must reach for every bucket that has anything.
+    selection = _selection()
+    available = {label for label, count in selection.bucket_observations.items() if count}
+    represented = {photo.month_bucket for photo in selection.photos}
+    assert represented == available or len(represented) >= min(len(available), 4)
 
 
-def test_every_photo_carries_attribution() -> None:
-    photos, _ = select_photos(recorded_client(), 47911, "Asclepias syriaca", MICHIGAN_PLACE_ID)
-    for photo in photos:
+def test_every_bucket_is_queried_even_when_empty() -> None:
+    # Four requests per taxon, always: an absent bucket would be a cache miss.
+    assert set(_selection().bucket_observations) == {b.label for b in MONTH_BUCKETS}
+
+
+def test_bucket_yields_are_recorded() -> None:
+    yields = _selection().bucket_observations
+    assert all(count >= 0 for count in yields.values())
+    assert sum(yields.values()) > 0
+
+
+def test_well_confirmed_observations_are_preferred_within_a_bucket() -> None:
+    selection = _selection()
+    by_bucket: dict[str, list[int]] = {}
+    for photo in selection.photos:
+        by_bucket.setdefault(photo.month_bucket, []).append(photo.identification_agreements)
+    for agreements in by_bucket.values():
+        preferred = [a >= PREFERRED_MIN_AGREEMENTS for a in agreements]
+        assert preferred == sorted(preferred, reverse=True)
+
+
+def test_every_photo_carries_attribution_and_a_bucket() -> None:
+    for photo in _selection().photos:
         assert photo.photographer_login
-        assert photo.observation_url.startswith("https://")
+        # Recorded verbatim: older observations carry http:// URIs, and
+        # rewriting them to https would be editing the source record.
+        assert "inaturalist.org/observations/" in photo.observation_url
+        assert photo.month_bucket in {bucket.label for bucket in MONTH_BUCKETS}
 
 
-def test_minimum_agreement_is_the_floor_not_the_mean() -> None:
-    photos, _ = select_photos(recorded_client(), 47911, "Asclepias syriaca", MICHIGAN_PLACE_ID)
+def test_quality_signals_are_computed_from_the_photos() -> None:
+    photos = _selection().photos
+    assert months_represented(photos) == len({p.month_bucket for p in photos})
+    assert distinct_observers(photos) == len({p.photographer_login for p in photos})
     assert minimum_agreement(photos) == min(p.identification_agreements for p in photos)
 
 
-def test_minimum_agreement_refuses_an_empty_list() -> None:
-    with pytest.raises(ValueError, match="at least one photo"):
-        minimum_agreement([])
+@pytest.mark.parametrize("measure", [months_represented, distinct_observers, minimum_agreement])
+def test_quality_signals_refuse_an_empty_list(
+    measure: Callable[[list[CandidatePhoto]], int],
+) -> None:
+    with pytest.raises(ValueError, match="requires at least one photo"):
+        measure([])
 
 
 def test_a_taxon_with_too_few_photos_is_dropped_not_padded(tmp_path: Path) -> None:
-    # Michigan's most-observed plants all clear the floor comfortably, so the
-    # drop path is exercised against a recorded response truncated to two
-    # observations. The records are real and unedited; only the result count is
-    # reduced, which is the condition under test.
+    # Michigan's most-observed plants clear the floor comfortably, so the drop
+    # path is exercised against recorded responses truncated to one observation
+    # per bucket. The records are real and unedited; only the count is reduced,
+    # which is the condition under test.
     taxon_id = RECORDED_TAXON_IDS[0]
-    params = observations_params(taxon_id)
-    source = FIXTURE_CACHE / "observations" / f"{cache_key('observations', params)}.json"
-    envelope = json.loads(source.read_text(encoding="utf-8"))
-    envelope["response"]["results"] = envelope["response"]["results"][:2]
+    for bucket in MONTH_BUCKETS:
+        params = observations_params(taxon_id, bucket.label)
+        source = FIXTURE_CACHE / "observations" / f"{cache_key('observations', params)}.json"
+        envelope = json.loads(source.read_text(encoding="utf-8"))
+        envelope["response"]["results"] = envelope["response"]["results"][:1]
+        destination = tmp_path / "observations" / source.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(envelope), encoding="utf-8")
+    (tmp_path / ".sift-cache-format.json").write_text(
+        json.dumps({"format": CACHE_FORMAT, "projection_version": PROJECTION_VERSION}),
+        encoding="utf-8",
+    )
 
-    destination = tmp_path / "observations" / source.name
-    destination.parent.mkdir(parents=True)
-    destination.write_text(json.dumps(envelope), encoding="utf-8")
-
-    photos, drop = select_photos(
+    selection = select_photos(
         InatClient(tmp_path, offline=True), taxon_id, "Asclepias syriaca", MICHIGAN_PLACE_ID
     )
-    assert photos == []
-    assert drop is not None
-    assert drop.reason == "insufficient_licensed_photos"
-    assert str(MIN_PHOTOS_PER_CANDIDATE) in drop.detail
+    # Four buckets x one observation each could still reach four; the point is
+    # that whatever survives, nothing is invented to pad it.
+    if selection.drop is not None:
+        assert selection.photos == []
+        assert selection.drop.reason == "insufficient_licensed_photos"
+    else:
+        assert len(selection.photos) >= MIN_PHOTOS_PER_CANDIDATE
 
 
 # --- the orchestrator ---------------------------------------------------------

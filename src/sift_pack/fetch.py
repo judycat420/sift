@@ -34,7 +34,13 @@ from sift_pack.candidates import CandidatePool, CandidateTaxon, DropRecord
 from sift_pack.domains import TaxonDomain
 from sift_pack.inat.client import InatClient
 from sift_pack.inat.deck import fetch_taxon_details, select_taxa
-from sift_pack.inat.photos import minimum_agreement, select_photos
+from sift_pack.inat.photos import (
+    MONTH_BUCKETS,
+    distinct_observers,
+    minimum_agreement,
+    months_represented,
+    select_photos,
+)
 from sift_pack.manifest import SourceRef
 
 __all__ = ["INAT_API_URL", "fetch_pool"]
@@ -92,8 +98,10 @@ def fetch_pool(
     dropped.extend(detail_drops)
     _log.info("stage 2: %d taxa detailed, %d dropped", len(details), len(detail_drops))
 
-    # Stage 3: photos, the expensive stage — one request per surviving taxon.
+    # Stage 3: photos, the expensive stage — four requests per surviving taxon,
+    # one per seasonal bucket.
     candidates: list[CandidateTaxon] = []
+    bucket_observations: dict[str, int] = {bucket.label: 0 for bucket in MONTH_BUCKETS}
     for summary in summaries:
         if len(candidates) >= limit:
             _log.info("reached limit of %d candidates; stopping", limit)
@@ -102,13 +110,14 @@ def fetch_pool(
         if detail is None:
             continue  # Already recorded as a drop by stage 2.
 
-        photos, photo_drop = select_photos(
-            client, summary.inat_taxon_id, summary.scientific_name, place_id
-        )
-        if photo_drop is not None:
-            dropped.append(photo_drop)
+        selection = select_photos(client, summary.inat_taxon_id, summary.scientific_name, place_id)
+        for label, count in selection.bucket_observations.items():
+            bucket_observations[label] = bucket_observations.get(label, 0) + count
+        if selection.drop is not None:
+            dropped.append(selection.drop)
             continue
 
+        photos = selection.photos
         candidates.append(
             CandidateTaxon(
                 inat_taxon_id=summary.inat_taxon_id,
@@ -118,7 +127,9 @@ def fetch_pool(
                 genus=detail.genus,
                 family=detail.family,
                 obs_count=summary.obs_count,
-                identification_agreement=minimum_agreement(photos),
+                min_identification_agreement=minimum_agreement(photos),
+                months_represented=months_represented(photos),
+                distinct_observers=distinct_observers(photos),
                 images=photos,
             )
         )
@@ -147,11 +158,16 @@ def fetch_pool(
         ],
         candidates=candidates,
         dropped=dropped,
+        bucket_observations=bucket_observations,
     )
     _log.info(
         "fetch complete: %d candidates, %d dropped, %s",
         len(pool.candidates),
         len(pool.dropped),
         client.stats.summary(),
+    )
+    _log.info(
+        "bucket yield: %s",
+        ", ".join(f"{label}={count}" for label, count in sorted(bucket_observations.items())),
     )
     return pool

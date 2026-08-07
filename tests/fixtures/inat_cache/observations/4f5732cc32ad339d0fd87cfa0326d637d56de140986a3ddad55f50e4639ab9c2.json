@@ -1,0 +1,29 @@
+{
+ "endpoint": "observations",
+ "fetched_at": "2026-08-07T03:23:52.210267+00:00",
+ "params": {
+  "month": [
+   10,
+   11,
+   12,
+   1,
+   2
+  ],
+  "order": "desc",
+  "order_by": "votes",
+  "per_page": 25,
+  "photo_license": [
+   "CC0",
+   "CC-BY",
+   "CC-BY-SA"
+  ],
+  "place_id": 29,
+  "quality_grade": "research",
+  "taxon_id": 49288
+ },
+ "projection_version": 1,
+ "response": {
+  "results": [],
+  "total_results": 0
+ }
+}

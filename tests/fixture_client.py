@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 
 from sift_pack.inat.client import InatClient, ParamValue
+from sift_pack.inat.photos import MONTH_BUCKETS, observations_query
 
 FIXTURE_CACHE = Path(__file__).parent / "fixtures" / "inat_cache"
 
@@ -48,15 +49,16 @@ def recorded_client() -> InatClient:
     return InatClient(FIXTURE_CACHE, offline=True)
 
 
-def observations_params(taxon_id: int) -> dict[str, ParamValue]:
-    """The exact parameters `select_photos` uses, so a test can find its fixture.
+def observations_params(taxon_id: int, bucket_label: str = "A") -> dict[str, ParamValue]:
+    """The exact parameters `select_photos` uses for one seasonal bucket.
 
-    Restated from `sift_pack.inat.photos` rather than imported, so that a change
-    to the query shape fails a test instead of silently re-keying the cache and
-    quietly re-fetching everything.
+    Delegates to the production query builder rather than restating it: with
+    four requests per taxon, a restated copy would drift silently and every
+    fixture lookup would miss.
 
     Args:
         taxon_id: Taxon whose observations are wanted.
+        bucket_label: Which seasonal bucket, by label.
 
     Returns:
         The parameter mapping.
@@ -65,13 +67,5 @@ def observations_params(taxon_id: int) -> dict[str, ParamValue]:
         >>> observations_params(47911)["taxon_id"]
         47911
     """
-    params: dict[str, ParamValue] = {
-        "taxon_id": taxon_id,
-        "place_id": MICHIGAN_PLACE_ID,
-        "quality_grade": "research",
-        "photo_license": ("CC0", "CC-BY", "CC-BY-SA"),
-        "per_page": 200,
-        "order_by": "votes",
-        "order": "desc",
-    }
-    return params
+    bucket = next(b for b in MONTH_BUCKETS if b.label == bucket_label)
+    return observations_query(taxon_id, MICHIGAN_PLACE_ID, bucket)

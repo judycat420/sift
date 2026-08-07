@@ -13,7 +13,19 @@ from tests.test_candidates import _photo
 FETCHED_AT = datetime(2026, 8, 7, tzinfo=UTC)
 
 
-def _taxon(taxon_id: int, obs_count: int, agreement: int, photos: int) -> CandidateTaxon:
+def _taxon(
+    taxon_id: int, obs_count: int, agreement: int, photos: int, buckets: str = "ABCD"
+) -> CandidateTaxon:
+    images = [
+        _photo(
+            taxon_id * 100 + n,
+            taxon_id,
+            photographer_login=f"obs{taxon_id}_{n}",
+            month_bucket=buckets[n % len(buckets)],
+            identification_agreements=agreement,
+        )
+        for n in range(photos)
+    ]
     return CandidateTaxon(
         inat_taxon_id=taxon_id,
         scientific_name=f"Genus species{taxon_id}",
@@ -22,8 +34,10 @@ def _taxon(taxon_id: int, obs_count: int, agreement: int, photos: int) -> Candid
         genus="Genus",
         family="Familia",
         obs_count=obs_count,
-        identification_agreement=agreement,
-        images=[_photo(taxon_id * 100 + n, taxon_id) for n in range(photos)],
+        min_identification_agreement=agreement,
+        months_represented=len({image.month_bucket for image in images}),
+        distinct_observers=len({image.photographer_login for image in images}),
+        images=images,
     )
 
 
@@ -50,9 +64,11 @@ def test_empty_pool_reports_absent_distributions_not_zero() -> None:
     # 0 would be a measurement; there is nothing to measure.
     stats = summarise(_pool([], []))
     assert stats.kept == 0
-    assert stats.median_obs_count is None
-    assert stats.p10_obs_count is None
-    assert stats.median_agreement is None
+    assert stats.obs_count.median is None
+    assert stats.obs_count.p10 is None
+    assert stats.agreement.median is None
+    assert stats.months.median is None
+    assert stats.observers.median is None
     assert "n/a" in stats.render()
 
 
@@ -89,9 +105,9 @@ def test_distributions_are_computed_over_candidates() -> None:
             [],
         )
     )
-    assert stats.median_obs_count == 125
-    assert stats.p10_obs_count == 50
-    assert stats.median_agreement == 2
+    assert stats.obs_count.median == 125
+    assert stats.obs_count.p10 == 50
+    assert stats.agreement.median == 2
 
 
 def test_every_drop_reason_appears_even_when_unused() -> None:
@@ -105,5 +121,13 @@ def test_every_drop_reason_appears_even_when_unused() -> None:
 
 def test_render_includes_every_section() -> None:
     report = summarise(_pool([_taxon(1, 100, 2, 4)], [])).render()
-    for heading in ("candidates kept", "dropped", "licenses", "image depth", "observation counts"):
+    for heading in (
+        "candidates kept",
+        "dropped",
+        "licenses",
+        "image depth",
+        "distributions",
+        "month buckets",
+        "cache on disk",
+    ):
         assert heading in report

@@ -1,0 +1,92 @@
+{
+ "endpoint": "observations",
+ "fetched_at": "2026-08-07T03:23:38.569575+00:00",
+ "params": {
+  "month": [
+   8,
+   9
+  ],
+  "order": "desc",
+  "order_by": "votes",
+  "per_page": 25,
+  "photo_license": [
+   "CC0",
+   "CC-BY",
+   "CC-BY-SA"
+  ],
+  "place_id": 29,
+  "quality_grade": "research",
+  "taxon_id": 55402
+ },
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "id": 306915895,
+    "num_identification_agreements": 1,
+    "photos": [
+     {
+      "id": 553528682,
+      "license_code": "cc-by",
+      "original_dimensions": {
+       "height": 2048,
+       "width": 1536
+      }
+     },
+     {
+      "id": 553528698,
+      "license_code": "cc-by",
+      "original_dimensions": {
+       "height": 2048,
+       "width": 1536
+      }
+     }
+    ],
+    "uri": "https://www.inaturalist.org/observations/306915895",
+    "user": {
+     "login": "ddennism",
+     "name": "Daniel McClosky"
+    }
+   },
+   {
+    "id": 176593691,
+    "num_identification_agreements": 1,
+    "photos": [
+     {
+      "id": 307037959,
+      "license_code": "cc0",
+      "original_dimensions": {
+       "height": 2048,
+       "width": 1536
+      }
+     }
+    ],
+    "uri": "https://www.inaturalist.org/observations/176593691",
+    "user": {
+     "login": "rangersara",
+     "name": "Sara L Giles"
+    }
+   },
+   {
+    "id": 16099572,
+    "num_identification_agreements": 1,
+    "photos": [
+     {
+      "id": 24117637,
+      "license_code": "cc-by",
+      "original_dimensions": {
+       "height": 2048,
+       "width": 1536
+      }
+     }
+    ],
+    "uri": "https://www.inaturalist.org/observations/16099572",
+    "user": {
+     "login": "peterq",
+     "name": "Peter Quakenbush"
+    }
+   }
+  ],
+  "total_results": 3
+ }
+}

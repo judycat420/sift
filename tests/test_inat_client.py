@@ -7,13 +7,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+import requests
 
 from sift_pack.inat.client import (
+    THROTTLE_BACKOFF_SECONDS,
+    THROTTLE_RETRIES,
     CacheMissError,
     Endpoint,
     InatClient,
     InatError,
     Params,
+    PyinaturalistFetcher,
+    ThrottledError,
     cache_key,
 )
 
@@ -187,11 +192,23 @@ class DatetimeFetcher:
 
 
 def test_a_live_result_matches_the_same_result_from_cache(tmp_path: Path) -> None:
+    # pyinaturalist parses timestamps into datetimes. Normalisation happens
+    # before caching, so a hit and a miss are the same object — and, since a
+    # raw datetime is not JSON-serialisable, an unnormalised body would fail
+    # to cache at all rather than diverge quietly.
     client = InatClient(tmp_path, fetcher=DatetimeFetcher())
     live = client.get("observations", {"taxon_id": 1})
     cached = client.get("observations", {"taxon_id": 1})
     assert live == cached
-    assert live["results"][0]["observed_on"] == "2026-08-07T00:00:00+00:00"
+
+
+def test_datetimes_are_normalised_before_anything_is_written(tmp_path: Path) -> None:
+    client = InatClient(tmp_path, fetcher=DatetimeFetcher(), keep_raw=True)
+    client.get("observations", {"taxon_id": 1})
+    raw = json.loads(
+        next((tmp_path / "raw" / "observations").glob("*.json")).read_text(encoding="utf-8")
+    )
+    assert raw["results"][0]["observed_on"] == "2026-08-07T00:00:00+00:00"
 
 
 class UnserialisableFetcher:
@@ -207,3 +224,92 @@ def test_a_value_with_no_json_form_is_reported_not_stringified(tmp_path: Path) -
     client = InatClient(tmp_path, fetcher=UnserialisableFetcher())
     with pytest.raises(InatError, match="has no JSON form"):
         client.get("observations", {"taxon_id": 1})
+
+
+# --- throttling: pyinaturalist retries 5xx but not 429 ------------------------
+
+
+class _FakeResponse:
+    """Minimal stand-in for the response attached to an HTTPError."""
+
+    def __init__(self, status_code: int, retry_after: str | None = None) -> None:
+        """Record the status and any Retry-After header."""
+        self.status_code = status_code
+        self.headers = {} if retry_after is None else {"Retry-After": retry_after}
+
+
+def _http_error(status_code: int, retry_after: str | None = None) -> requests.HTTPError:
+    error = requests.HTTPError(f"{status_code} error")
+    error.response = _FakeResponse(status_code, retry_after)  # type: ignore[assignment] # duck-typed stand-in
+    return error
+
+
+class ThrottlingFetcher(PyinaturalistFetcher):
+    """Raises 429 a fixed number of times, then succeeds."""
+
+    def __init__(self, throttles: int, retry_after: str | None = None) -> None:
+        """Set how many throttles to emit before succeeding."""
+        super().__init__(sleeper=self.record_sleep)
+        self.remaining = throttles
+        self.retry_after = retry_after
+        self.waits: list[float] = []
+
+    def record_sleep(self, seconds: float) -> None:
+        """Record a wait instead of performing it."""
+        self.waits.append(seconds)
+
+    def _call(self, endpoint: Endpoint, kwargs: dict[str, object]) -> object:
+        del endpoint, kwargs
+        if self.remaining > 0:
+            self.remaining -= 1
+            raise _http_error(429, self.retry_after)
+        return {"results": [], "total_results": 0}
+
+
+def test_a_throttle_is_waited_out_not_fatal() -> None:
+    fetcher = ThrottlingFetcher(throttles=2)
+    assert fetcher.fetch("observations", {"taxon_id": 1}) == {"results": [], "total_results": 0}
+    assert fetcher.throttled == 2
+    assert len(fetcher.waits) == 2
+
+
+def test_backoff_doubles_between_throttles() -> None:
+    fetcher = ThrottlingFetcher(throttles=3)
+    fetcher.fetch("observations", {"taxon_id": 1})
+    assert fetcher.waits == [
+        THROTTLE_BACKOFF_SECONDS,
+        THROTTLE_BACKOFF_SECONDS * 2,
+        THROTTLE_BACKOFF_SECONDS * 4,
+    ]
+
+
+def test_the_servers_retry_after_is_preferred_over_our_guess() -> None:
+    fetcher = ThrottlingFetcher(throttles=1, retry_after="7")
+    fetcher.fetch("observations", {"taxon_id": 1})
+    assert fetcher.waits == [7.0]
+
+
+def test_an_unparseable_retry_after_falls_back_to_the_default() -> None:
+    fetcher = ThrottlingFetcher(throttles=1, retry_after="next tuesday")
+    fetcher.fetch("observations", {"taxon_id": 1})
+    assert fetcher.waits == [THROTTLE_BACKOFF_SECONDS]
+
+
+def test_persistent_throttling_gives_up_and_says_nothing_was_lost() -> None:
+    fetcher = ThrottlingFetcher(throttles=THROTTLE_RETRIES + 1)
+    with pytest.raises(ThrottledError, match="re-running resumes"):
+        fetcher.fetch("observations", {"taxon_id": 1})
+    assert len(fetcher.waits) == THROTTLE_RETRIES
+
+
+class _ServerErrorFetcher(PyinaturalistFetcher):
+    """Raises a 500, which is pyinaturalist's job to retry, not ours."""
+
+    def _call(self, endpoint: Endpoint, kwargs: dict[str, object]) -> object:
+        del endpoint, kwargs
+        raise _http_error(500)
+
+
+def test_non_throttle_http_errors_are_not_swallowed() -> None:
+    with pytest.raises(requests.HTTPError):
+        _ServerErrorFetcher(sleeper=lambda _: None).fetch("observations", {"taxon_id": 1})

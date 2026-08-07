@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from sift_pack.inat.client import (
+    CACHE_FORMAT,
     Endpoint,
     InatClient,
     InatError,
@@ -28,7 +29,7 @@ from sift_pack.inat.client import (
     cache_key,
 )
 from sift_pack.inat.deck import fetch_taxon_details, select_taxa
-from sift_pack.inat.photos import select_photos
+from sift_pack.inat.photos import MONTH_BUCKETS, select_photos
 from sift_pack.inat.places import (
     PLACES_PATH,
     STATE_NAMES,
@@ -36,6 +37,7 @@ from sift_pack.inat.places import (
     load_places,
     refresh_places,
 )
+from sift_pack.inat.projections import PROJECTION_VERSION
 from tests.fixture_client import (
     FIXTURE_CACHE,
     MICHIGAN_PLACE_ID,
@@ -47,13 +49,42 @@ PLANTAE = "Plantae"
 
 
 def _seed(cache_dir: Path, endpoint: Endpoint, params: Params, response: dict[str, Any]) -> None:
-    """Write one response into a cache directory, as the client would have."""
+    """Write one response into a cache directory, as the client would have.
+
+    Includes the format marker: a directory with entries and no marker is a
+    pre-M2.1 cache, and the client rejects it — which is the behaviour under
+    test elsewhere, not something to trip over here.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / ".sift-cache-format.json").write_text(
+        json.dumps({"format": CACHE_FORMAT, "projection_version": PROJECTION_VERSION}),
+        encoding="utf-8",
+    )
     path = cache_dir / endpoint / f"{cache_key(endpoint, params)}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps({"endpoint": endpoint, "params": dict(params), "response": response}),
         encoding="utf-8",
     )
+
+
+def _seed_observations(
+    cache_dir: Path, taxon_id: int, results: list[Any], bucket_label: str = "A"
+) -> None:
+    """Seed one bucket with results and the other three as empty.
+
+    Every bucket must be present: `select_photos` makes four requests, and an
+    absent one is a cache miss rather than an empty bucket. Seeding the empty
+    ones explicitly is also the point of several of these tests — an empty
+    bucket is normal and must not fail the fetch.
+    """
+    for bucket in MONTH_BUCKETS:
+        _seed(
+            cache_dir,
+            "observations",
+            observations_params(taxon_id, bucket.label),
+            {"results": results if bucket.label == bucket_label else []},
+        )
 
 
 def _species_counts_params(page: int = 1) -> dict[str, ParamValue]:
@@ -255,15 +286,10 @@ def _observation(**overrides: Any) -> dict[str, Any]:  # noqa: ANN401 - builds d
 def test_an_unusable_observation_contributes_no_photos(
     tmp_path: Path, override: dict[str, Any]
 ) -> None:
-    _seed(
-        tmp_path,
-        "observations",
-        observations_params(1),
-        {"results": [_observation(**override)]},
-    )
-    photos, drop = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
-    assert photos == []
-    assert drop is not None
+    _seed_observations(tmp_path, 1, [_observation(**override)])
+    selection = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
+    assert selection.photos == []
+    assert selection.drop is not None
 
 
 @pytest.mark.parametrize(
@@ -279,16 +305,11 @@ def test_an_unusable_observation_contributes_no_photos(
     ],
 )
 def test_an_unusable_photo_is_skipped_not_repaired(tmp_path: Path, photo: dict[str, Any]) -> None:
-    _seed(
-        tmp_path,
-        "observations",
-        observations_params(1),
-        {"results": [_observation(photos=[photo])]},
-    )
-    photos, drop = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
-    assert photos == []
-    assert drop is not None
-    assert drop.reason == "insufficient_licensed_photos"
+    _seed_observations(tmp_path, 1, [_observation(photos=[photo])])
+    selection = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
+    assert selection.photos == []
+    assert selection.drop is not None
+    assert selection.drop.reason == "insufficient_licensed_photos"
 
 
 def test_licence_codes_are_matched_case_insensitively(tmp_path: Path) -> None:
@@ -298,6 +319,7 @@ def test_licence_codes_are_matched_case_insensitively(tmp_path: Path) -> None:
         _observation(
             id=n,
             uri=f"https://www.inaturalist.org/observations/{n}",
+            user={"login": f"person{n}", "name": None},
             photos=[
                 {
                     "id": n * 10,
@@ -308,10 +330,15 @@ def test_licence_codes_are_matched_case_insensitively(tmp_path: Path) -> None:
         )
         for n, code in enumerate(["CC0", "CC-BY", "cc-by-sa", "Cc0"], start=1)
     ]
-    _seed(tmp_path, "observations", observations_params(1), {"results": observations})
-    photos, drop = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
-    assert drop is None
-    assert [photo.license for photo in photos] == ["cc0", "cc-by", "cc-by-sa", "cc0"]
+    _seed_observations(tmp_path, 1, observations)
+    selection = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
+    assert selection.drop is None
+    assert sorted(photo.license for photo in selection.photos) == [
+        "cc-by",
+        "cc-by-sa",
+        "cc0",
+        "cc0",
+    ]
 
 
 def test_only_one_photo_is_taken_per_observation(tmp_path: Path) -> None:
@@ -319,15 +346,10 @@ def test_only_one_photo_is_taken_per_observation(tmp_path: Path) -> None:
         {"id": n, "license_code": "cc0", "original_dimensions": {"width": 10, "height": 10}}
         for n in range(1, 20)
     ]
-    _seed(
-        tmp_path,
-        "observations",
-        observations_params(1),
-        {"results": [_observation(photos=many_photos)]},
-    )
-    photos, drop = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
-    assert photos == []
-    assert drop is not None  # 19 photos, but only one observation
+    _seed_observations(tmp_path, 1, [_observation(photos=many_photos)])
+    selection = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
+    assert selection.photos == []
+    assert selection.drop is not None  # 19 photos, but only one observation
 
 
 def test_missing_agreement_count_is_recorded_as_zero_not_assumed(tmp_path: Path) -> None:
@@ -336,6 +358,7 @@ def test_missing_agreement_count_is_recorded_as_zero_not_assumed(tmp_path: Path)
             id=n,
             uri=f"https://www.inaturalist.org/observations/{n}",
             num_identification_agreements=None,
+            user={"login": f"person{n}", "name": None},
             photos=[
                 {
                     "id": n * 10,
@@ -346,15 +369,15 @@ def test_missing_agreement_count_is_recorded_as_zero_not_assumed(tmp_path: Path)
         )
         for n in range(1, 5)
     ]
-    _seed(tmp_path, "observations", observations_params(1), {"results": observations})
-    photos, drop = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
-    assert drop is None
+    _seed_observations(tmp_path, 1, observations)
+    selection = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
+    assert selection.drop is None
     # 0 is the floor of the recorded range, not a claim that anyone agreed.
-    assert all(photo.identification_agreements == 0 for photo in photos)
+    assert all(photo.identification_agreements == 0 for photo in selection.photos)
 
 
 def test_observations_response_without_results_is_an_error(tmp_path: Path) -> None:
-    _seed(tmp_path, "observations", observations_params(1), {"nope": True})
+    _seed(tmp_path, "observations", observations_params(1, "A"), {"nope": True})
     with pytest.raises(InatError, match="no results list"):
         select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
 
@@ -375,11 +398,11 @@ def test_a_photographer_without_a_display_name_is_left_absent(tmp_path: Path) ->
         )
         for n in range(1, 5)
     ]
-    _seed(tmp_path, "observations", observations_params(1), {"results": observations})
-    photos, _ = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
-    # Never backfilled from the login.
-    assert all(photo.photographer_name is None for photo in photos)
-    assert all(photo.photographer_login == "anon" for photo in photos)
+    _seed_observations(tmp_path, 1, observations)
+    selection = select_photos(InatClient(tmp_path, offline=True), 1, "Test", MICHIGAN_PLACE_ID)
+    # Never backfilled from the login. Only two survive: the observer cap.
+    assert all(photo.photographer_name is None for photo in selection.photos)
+    assert selection.drop is not None
 
 
 # --- places: resolution refuses to guess --------------------------------------

@@ -28,14 +28,18 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
   a courtesy target of ~1 request/second sustained; bulk work is expected to
   move to the Open Dataset instead. A descriptive `User-Agent` with contact
   details is expected.
-- **How Sift uses it (as of M2):** four endpoints only, listed in
+- **How Sift uses it (as of M2.1):** four endpoints only, listed in
   `sift_pack.inat.client.Endpoint` — `species_counts` (rank a place's taxa),
-  `observations` (licence-filtered photo selection), `taxa_by_id` (genus and
-  family from the ancestor list), and `places_autocomplete` (state to place ID,
-  resolved once into the committed `data/places.json`). Rate limiting is
-  `pyinaturalist`'s default implementation of iNaturalist's published guidance,
-  not a hand-rolled limiter. Every response is cached on disk, so a re-run costs
-  nothing. A full 250-candidate state fetch is roughly 280 requests.
+  `observations` (licence-filtered photo selection, four month-stratified
+  requests per taxon at `per_page=25`), `taxa_by_id` (genus and family from the
+  ancestor list), and `places_autocomplete` (state to place ID, resolved once
+  into the committed `data/places.json`). Rate limiting is `pyinaturalist`'s
+  default implementation of iNaturalist's published guidance, not a hand-rolled
+  limiter, and a lockfile keeps Sift to one fetch process at a time. Responses
+  are cached on disk as projections — only the fields Sift reads — so a re-run
+  costs nothing and a state's cache is tens of megabytes rather than gigabytes.
+  A full 300-candidate state fetch is roughly 1200 requests over ~20 minutes,
+  well inside the ~10k/day guidance.
 - **Known limitations:**
   - Crowd-sourced. Only "research grade" observations have community
     identification agreement; everything else is one person's opinion and must
@@ -61,6 +65,16 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
   - Observation photos carry per-photo licences that differ from the
     observation's own licence. Sift filters on the photo licence, and re-checks
     it client-side, because a server-side filter that stops working is silent.
+  - Observation URIs are not uniformly `https://` — older records carry `http://`.
+    Sift records them verbatim rather than rewriting, since a URL is part of the
+    attribution record.
+  - Photo licence codes are returned lowercase but the `photo_license` request
+    parameter requires uppercase. The two spellings are held in one place
+    (`sift_pack.inat.photos`) so they cannot drift.
+  - Observations are heavily clustered by season and by observer: a taxon's most
+    recent records are often one person's, from one month. Sift stratifies by
+    month and caps photos per observer to compensate; see `docs/decisions.md`,
+    2026-08-07.
 
 ## iNaturalist Open Dataset (AWS Open Data)
 

@@ -11,14 +11,25 @@ envelope parsing, response normalisation — with no HTTP library and no mock in
 the loop. Anything a test asks for that was not recorded raises `CacheMissError`
 naming the request, rather than a socket error.
 
+Since M2.1 the client caches **projections** rather than raw bodies, so a
+fixture is exactly what the parsers read and nothing else. The projection is
+defined once, in `sift_pack.inat.projections`, and the cache key includes
+`PROJECTION_VERSION` — so widening a projection means bumping the version and
+re-recording, never silently reading an old shape.
+
 ```
 tests/fixtures/inat_cache/
-  observations/<sha256-of-endpoint-and-params>.json
+  .sift-cache-format.json   # format + projection version; its absence means legacy
+  observations/<sha256-of-endpoint-params-and-projection-version>.json
   species_counts/...
   taxa_by_id/...
   places_autocomplete/...
   RECORDED_TAXON_IDS.json   # which taxa the deck stage selected when recorded
 ```
+
+There are four `observations` entries per taxon, one per seasonal bucket. All
+four must exist even when a bucket returned nothing: `select_photos` makes four
+requests, and a missing entry is a cache miss rather than an empty bucket.
 
 Filenames are hashes, but each envelope carries its own `endpoint` and `params`,
 so the directory is auditable by reading it:
@@ -46,18 +57,20 @@ uv run python scripts/record_fixtures.py
 It makes live requests (served from `cache/` when warm) and rewrites the whole
 fixture set. Never run in CI.
 
-Responses are **projected**, not trimmed by hand: `scripts/record_fixtures.py`
-keeps exactly the fields the parsers read and drops the rest, so an observations
-page falls from megabytes to kilobytes. No value is altered, reordered or
-invented, and the projection functions are committed so the reduction is
-auditable. Never hand-edit a fixture to make a test pass — a fixture that no
-longer matches reality is worse than no fixture. If the upstream shape changed,
-change the code and re-record.
+The recorder simply runs the real pipeline with its cache pointed here. It has
+no projection logic of its own — that would be a second definition of "what Sift
+reads", able to drift from the one the parsers use. Fixtures are produced by the
+same code path that later replays them.
 
-The recorder derives which taxa to record by running the real deck stage over
-the recorded `species_counts` response, so the fixture set is exactly what the
-pipeline requests. A hardcoded list would drift the moment observation counts
-reorder the deck.
+Which taxa get recorded is derived by running the real deck stage, not
+hardcoded: a hardcoded list would drift the moment observation counts reorder
+the deck, and every subsequent fixture lookup would miss.
+
+Never hand-edit a fixture to make a test pass — a fixture that no longer matches
+reality is worse than no fixture. If the upstream shape changed, change the code
+and re-record. Truncating a recorded response to construct a specific condition
+(too few observations, say) is fine in a test that says so, since the records
+themselves stay unedited.
 
 ## Rules
 

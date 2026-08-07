@@ -25,14 +25,18 @@ from __future__ import annotations
 import statistics
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import get_args
 
 from sift_pack.candidates import CandidatePool, DropReason
+from sift_pack.inat.photos import MONTH_BUCKETS
 
-__all__ = ["PoolStats", "summarise"]
+__all__ = ["Distribution", "PoolStats", "empty_stats", "human_bytes", "summarise"]
 
 _LOW_IMAGE_CEILING = 5
 """Candidates with at most this many photos are the thin end of the pack."""
+
+_BYTES_PER_UNIT = 1024
 
 
 def _percentile(values: list[int], fraction: float) -> int:
@@ -46,6 +50,84 @@ def _percentile(values: list[int], fraction: float) -> int:
 
 
 @dataclass(frozen=True, slots=True)
+class Distribution:
+    """Median and 10th percentile of one measure across the candidates.
+
+    The p10 matters more than the median for pack quality: the median says what
+    a typical card looks like, the p10 says what the worst tenth looks like, and
+    a pack goes wrong at its thin end.
+
+    Attributes:
+        median: Middle value, or `None` when there are no candidates.
+        p10: 10th-percentile value, or `None` when there are no candidates.
+    """
+
+    median: int | None
+    p10: int | None
+
+    def render(self, label: str) -> str:
+        """Format as one report line.
+
+        Args:
+            label: What is being measured.
+
+        Returns:
+            An aligned `label: median X, p10 Y` line.
+
+        Example:
+            >>> Distribution(median=3, p10=2).render("months")
+            '  months: median 3, p10 2'
+        """
+        return f"  {label}: median {_or_na(self.median)}, p10 {_or_na(self.p10)}"
+
+
+def _distribution(values: list[int]) -> Distribution:
+    """Summarise one measure, or report absence when there is nothing to measure."""
+    if not values:
+        return Distribution(median=None, p10=None)
+    return Distribution(median=int(statistics.median(values)), p10=_percentile(values, 0.10))
+
+
+def directory_size(path: Path) -> int:
+    """Total bytes of every file under a directory.
+
+    Args:
+        path: Directory to measure. A missing directory measures zero.
+
+    Returns:
+        Size in bytes.
+
+    Example:
+        >>> directory_size(Path("does-not-exist"))
+        0
+    """
+    if not path.is_dir():
+        return 0
+    return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+
+
+def human_bytes(size: int) -> str:
+    """Render a byte count at human scale.
+
+    Args:
+        size: Bytes.
+
+    Returns:
+        A short string such as `'12.3 MB'`.
+
+    Example:
+        >>> human_bytes(1536)
+        '1.5 KB'
+    """
+    scaled = float(size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if scaled < _BYTES_PER_UNIT or unit == "GB":
+            return f"{scaled:.1f} {unit}" if unit != "B" else f"{int(scaled)} B"
+        scaled /= _BYTES_PER_UNIT
+    return f"{scaled:.1f} GB"
+
+
+@dataclass(frozen=True, slots=True)
 class PoolStats:
     """Everything `sift-pack stats` prints, computed once.
 
@@ -55,9 +137,13 @@ class PoolStats:
         license_histogram: Photo count per licence.
         thin_image_taxa: Candidates with 4-5 photos.
         rich_image_taxa: Candidates with 6-8 photos.
-        median_obs_count: Median research-grade observation count.
-        p10_obs_count: 10th-percentile observation count.
-        median_agreement: Median identification-agreement floor.
+        obs_count: Research-grade observation count distribution.
+        agreement: Identification-agreement floor distribution.
+        months: Seasonal-spread distribution.
+        observers: Distinct-observer distribution.
+        bucket_observations: Observations each seasonal bucket returned.
+        bucket_photos: Selected photos drawn from each seasonal bucket.
+        cache_bytes: Size of the response cache on disk, or `None` if not asked.
     """
 
     kept: int
@@ -65,9 +151,13 @@ class PoolStats:
     license_histogram: dict[str, int]
     thin_image_taxa: int
     rich_image_taxa: int
-    median_obs_count: int | None
-    p10_obs_count: int | None
-    median_agreement: int | None
+    obs_count: Distribution
+    agreement: Distribution
+    months: Distribution
+    observers: Distribution
+    bucket_observations: dict[str, int]
+    bucket_photos: dict[str, int]
+    cache_bytes: int | None
 
     def render(self) -> str:
         """Format the statistics as a plain-text report.
@@ -76,30 +166,23 @@ class PoolStats:
             A multi-line report, one section per question.
 
         Example:
-            >>> stats = PoolStats(
-            ...     kept=0,
-            ...     dropped_by_reason={"hybrid": 2},
-            ...     license_histogram={},
-            ...     thin_image_taxa=0,
-            ...     rich_image_taxa=0,
-            ...     median_obs_count=None,
-            ...     p10_obs_count=None,
-            ...     median_agreement=None,
-            ... )
-            >>> print(stats.render().splitlines()[0])
+            >>> print(empty_stats().render().splitlines()[0])
             candidates kept: 0
         """
         lines = [f"candidates kept: {self.kept}"]
 
         total_dropped = sum(self.dropped_by_reason.values())
         lines.append(f"dropped: {total_dropped}")
-        for reason, count in sorted(self.dropped_by_reason.items()):
-            lines.append(f"  {reason}: {count}")
+        lines.extend(
+            f"  {reason}: {count}" for reason, count in sorted(self.dropped_by_reason.items())
+        )
 
         lines.append("licenses:")
         if self.license_histogram:
-            for code, count in sorted(self.license_histogram.items()):
-                lines.append(f"  {code}: {count} photos")
+            lines.extend(
+                f"  {code}: {count} photos"
+                for code, count in sorted(self.license_histogram.items())
+            )
         else:
             lines.append("  (no photos)")
 
@@ -107,11 +190,26 @@ class PoolStats:
         lines.append(f"  4-5 images: {self.thin_image_taxa} taxa")
         lines.append(f"  6-8 images: {self.rich_image_taxa} taxa")
 
-        lines.append("observation counts:")
-        lines.append(f"  median: {_or_na(self.median_obs_count)}")
-        lines.append(f"  p10:    {_or_na(self.p10_obs_count)}")
+        lines.append("distributions:")
+        lines.append(self.obs_count.render("obs_count               "))
+        lines.append(self.months.render("months_represented      "))
+        lines.append(self.observers.render("distinct_observers      "))
+        lines.append(self.agreement.render("min_identification_agmt "))
 
-        lines.append(f"median identification agreement: {_or_na(self.median_agreement)}")
+        lines.append("month buckets:")
+        for bucket in MONTH_BUCKETS:
+            returned = self.bucket_observations.get(bucket.label, 0)
+            selected = self.bucket_photos.get(bucket.label, 0)
+            months = ",".join(str(month) for month in bucket.months)
+            lines.append(
+                f"  {bucket.label} (months {months}): {returned} observations, "
+                f"{selected} photos selected — {bucket.description}"
+            )
+
+        lines.append(
+            "cache on disk: "
+            + ("not measured" if self.cache_bytes is None else human_bytes(self.cache_bytes))
+        )
         return "\n".join(lines)
 
 
@@ -123,11 +221,40 @@ def _or_na(value: int | None) -> str:
     return "n/a" if value is None else str(value)
 
 
-def summarise(pool: CandidatePool) -> PoolStats:
+def empty_stats() -> PoolStats:
+    """A zeroed report, used in doctests and as the shape of "nothing measured".
+
+    Returns:
+        Stats describing a pool with no candidates and no drops.
+
+    Example:
+        >>> empty_stats().kept
+        0
+    """
+    absent = Distribution(median=None, p10=None)
+    return PoolStats(
+        kept=0,
+        dropped_by_reason={},
+        license_histogram={},
+        thin_image_taxa=0,
+        rich_image_taxa=0,
+        obs_count=absent,
+        agreement=absent,
+        months=absent,
+        observers=absent,
+        bucket_observations={},
+        bucket_photos={},
+        cache_bytes=None,
+    )
+
+
+def summarise(pool: CandidatePool, cache_dir: Path | None = None) -> PoolStats:
     """Compute the statistics for one pool.
 
     Args:
         pool: The pool to describe.
+        cache_dir: Response cache to measure, or `None` to skip measuring. A
+            skipped measurement reports as "not measured", never as zero.
 
     Returns:
         The computed statistics. Distribution figures are `None` for an empty
@@ -153,7 +280,7 @@ def summarise(pool: CandidatePool) -> PoolStats:
         ...     candidates=[],
         ...     dropped=[],
         ... )
-        >>> summarise(pool).median_obs_count is None
+        >>> summarise(pool).obs_count.median is None
         True
     """
     reasons: Counter[str] = Counter(record.reason for record in pool.dropped)
@@ -162,13 +289,13 @@ def summarise(pool: CandidatePool) -> PoolStats:
     licenses: Counter[str] = Counter(
         photo.license for candidate in pool.candidates for photo in candidate.images
     )
+    bucket_photos: Counter[str] = Counter(
+        photo.month_bucket for candidate in pool.candidates for photo in candidate.images
+    )
 
     image_counts = [len(candidate.images) for candidate in pool.candidates]
     thin = sum(1 for count in image_counts if count <= _LOW_IMAGE_CEILING)
     rich = sum(1 for count in image_counts if count > _LOW_IMAGE_CEILING)
-
-    obs_counts = [candidate.obs_count for candidate in pool.candidates]
-    agreements = [candidate.identification_agreement for candidate in pool.candidates]
 
     return PoolStats(
         kept=len(pool.candidates),
@@ -176,7 +303,11 @@ def summarise(pool: CandidatePool) -> PoolStats:
         license_histogram=dict(licenses),
         thin_image_taxa=thin,
         rich_image_taxa=rich,
-        median_obs_count=int(statistics.median(obs_counts)) if obs_counts else None,
-        p10_obs_count=_percentile(obs_counts, 0.10) if obs_counts else None,
-        median_agreement=int(statistics.median(agreements)) if agreements else None,
+        obs_count=_distribution([c.obs_count for c in pool.candidates]),
+        agreement=_distribution([c.min_identification_agreement for c in pool.candidates]),
+        months=_distribution([c.months_represented for c in pool.candidates]),
+        observers=_distribution([c.distinct_observers for c in pool.candidates]),
+        bucket_observations=dict(pool.bucket_observations),
+        bucket_photos=dict(bucket_photos),
+        cache_bytes=None if cache_dir is None else directory_size(cache_dir),
     )

@@ -19,16 +19,19 @@ from __future__ import annotations
 
 import logging
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from sift_pack.candidates import CandidatePool
+from sift_pack.domains import TaxonDomain
 from sift_pack.domains.registry import UnknownDomainError, resolve_domain
 from sift_pack.fetch import fetch_pool
 from sift_pack.inat.client import InatClient, InatError
 from sift_pack.inat.places import PLACES_PATH, load_places, refresh_places
+from sift_pack.lock import FetchLockError, fetch_lock
 from sift_pack.stats import summarise
 
 __all__ = ["app", "build", "fetch", "main", "places", "stats"]
@@ -43,6 +46,17 @@ _EXIT_DOMAIN_UNAVAILABLE = 3
 _EXIT_NOT_YET_IMPLEMENTED = 4
 _EXIT_INAT_ERROR = 5
 _EXIT_MISSING_POOL = 6
+_EXIT_LOCKED = 7
+
+DEFAULT_LIMIT = 300
+"""Candidates a fetch aims for.
+
+Deliberately above the 250 a finished pack wants. M4 promotes candidates by
+matching them to USDA PLANTS, and unmatched taxa are dropped — a name
+iNaturalist recognises is not always one USDA carries, especially for recently
+split or renamed species. Fetching exactly 250 would mean discovering the
+shortfall only after the expensive stage and re-fetching to cover it. Headroom
+is cheap here and expensive later."""
 
 
 def pool_path(state: str, work_dir: Path = DEFAULT_WORK_DIR) -> Path:
@@ -92,11 +106,17 @@ def fetch(  # noqa: PLR0913 - a CLI verb's flags are its interface, not a parame
     *,
     domain: Annotated[str, typer.Option(help="Domain slug, e.g. 'plants'.")],
     state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
-    limit: Annotated[int, typer.Option(min=1, help="Candidates to aim for.")] = 250,
+    limit: Annotated[int, typer.Option(min=1, help="Candidates to aim for.")] = DEFAULT_LIMIT,
     cache_dir: Annotated[Path, typer.Option(help="Response cache.")] = DEFAULT_CACHE_DIR,
     work_dir: Annotated[Path, typer.Option(help="Where to write the pool.")] = DEFAULT_WORK_DIR,
     offline: Annotated[
         bool, typer.Option(help="Fail on a cache miss instead of fetching.")
+    ] = False,
+    keep_raw: Annotated[
+        bool, typer.Option(help="Also write untouched responses to cache/raw/ for debugging.")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option(help="Break a stale fetch lock left by a killed process.")
     ] = False,
     verbose: Annotated[bool, typer.Option(help="Log progress to stderr.")] = True,
 ) -> None:
@@ -112,11 +132,14 @@ def fetch(  # noqa: PLR0913 - a CLI verb's flags are its interface, not a parame
         cache_dir: Where cached API responses live.
         work_dir: Where the pool is written.
         offline: When set, a cache miss is an error rather than a request.
+        keep_raw: Also keep untouched response bodies under `cache/raw/`.
+        force: Break a stale lock. Only when no fetch is actually running.
         verbose: Log progress to stderr.
 
     Raises:
         typer.Exit: 2 for an unknown domain, 3 for a domain that is known but
-            unimplemented, 5 for an iNaturalist or place-table failure.
+            unimplemented, 5 for an iNaturalist or place-table failure, 7 when
+            another fetch already holds the lock.
 
     Example:
         >>> from typer.testing import CliRunner
@@ -136,9 +159,23 @@ def fetch(  # noqa: PLR0913 - a CLI verb's flags are its interface, not a parame
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=_EXIT_INAT_ERROR) from exc
 
-    client = InatClient(cache_dir, offline=offline)
+    # The lock is taken before the client is built, so a refused second fetch
+    # has made no request and has not even touched the cache.
     try:
-        pool = fetch_pool(client, resolved, state.upper(), place_id, limit)
+        with fetch_lock(work_dir, force=force):
+            _run_fetch(
+                InatClient(cache_dir, offline=offline, keep_raw=keep_raw),
+                resolved,
+                _FetchRequest(
+                    state=state,
+                    place_id=place_id,
+                    limit=limit,
+                    destination=pool_path(state, work_dir),
+                ),
+            )
+    except FetchLockError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=_EXIT_LOCKED) from exc
     except NotImplementedError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=_EXIT_DOMAIN_UNAVAILABLE) from exc
@@ -146,11 +183,32 @@ def fetch(  # noqa: PLR0913 - a CLI verb's flags are its interface, not a parame
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=_EXIT_INAT_ERROR) from exc
 
-    destination = pool_path(state, work_dir)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(pool.model_dump_json(indent=2) + "\n", encoding="utf-8")
 
-    typer.echo(f"wrote {destination}", err=True)
+@dataclass(frozen=True, slots=True)
+class _FetchRequest:
+    """What one fetch is for, bundled so the runner has a readable signature.
+
+    Attributes:
+        state: Region code the pool is scoped to.
+        place_id: iNaturalist place ID for `state`.
+        limit: How many candidates to aim for.
+        destination: Where the pool is written.
+    """
+
+    state: str
+    place_id: int
+    limit: int
+    destination: Path
+
+
+def _run_fetch(client: InatClient, domain: TaxonDomain, request: _FetchRequest) -> None:
+    """Run the fetch and write the pool. Called only while the lock is held."""
+    pool = fetch_pool(client, domain, request.state.upper(), request.place_id, request.limit)
+
+    request.destination.parent.mkdir(parents=True, exist_ok=True)
+    request.destination.write_text(pool.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+    typer.echo(f"wrote {request.destination}", err=True)
     typer.echo(
         f"{len(pool.candidates)} candidates, {len(pool.dropped)} dropped, {client.stats.summary()}",
         err=True,
@@ -161,12 +219,14 @@ def fetch(  # noqa: PLR0913 - a CLI verb's flags are its interface, not a parame
 def stats(
     state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
     work_dir: Annotated[Path, typer.Option(help="Where the pool lives.")] = DEFAULT_WORK_DIR,
+    cache_dir: Annotated[Path, typer.Option(help="Cache to measure.")] = DEFAULT_CACHE_DIR,
 ) -> None:
     """Summarise a fetched candidate pool.
 
     Args:
         state: Which state's pool to describe.
         work_dir: Directory holding the pool.
+        cache_dir: Response cache, measured for the on-disk size line.
 
     Raises:
         typer.Exit: 6 when no pool has been fetched for that state.
@@ -190,7 +250,7 @@ def stats(
 
     pool = CandidatePool.model_validate_json(text)
     typer.echo(f"pool: {source} ({pool.domain}, {pool.state}, place_id {pool.place_id})", err=True)
-    typer.echo(summarise(pool).render())
+    typer.echo(summarise(pool, cache_dir).render())
 
 
 @app.command()

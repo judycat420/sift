@@ -175,3 +175,111 @@ met in full. `respx` stays the required mechanism for any future `httpx` client.
 The cost is that fixtures are keyed by hash rather than by readable filename;
 each envelope records its endpoint and parameters so a cache directory is still
 auditable by reading it.
+
+### 2026-08-07 — The cache stores projections, not raw responses
+
+`InatClient` caches `sift_pack.inat.projections.project()` output — the fields
+the parsers actually read — rather than whole response bodies. M2 cached raw and
+paid 1.5 GB per state to answer four questions about it. Size is the smaller
+half of the reason. The larger half is that a projected cache is a record of
+what Sift *understood*: a field the projection does not carry is a field no
+parser can quietly start depending on, because the cached fixtures replaying in
+the test suite simply do not have it. `PROJECTION_VERSION` is part of every
+cache key, so widening a projection partitions the cache instead of corrupting
+it — old entries become unreachable rather than being served with a shape the
+new parser does not expect. `--keep-raw` writes untouched bodies to `cache/raw/`
+for debugging, keyed without the projection version so they survive a bump, and
+that directory can be deleted at any time without affecting correctness. The
+cost is that a new field needs a projection change and a version bump before any
+parser can use it, and that debugging a parse failure means re-fetching with
+`--keep-raw` unless it was already on. Caches written before this change carry
+no format marker; the client detects that and refuses to use the directory,
+naming the `rm -rf` rather than silently re-fetching around gigabytes of dead
+weight.
+
+### 2026-08-07 — Photos are sampled month-stratified, and selected for spread before confidence
+
+Each taxon's photos come from four requests — months 3-5, 6-7, 8-9, and 10-2 —
+at 25 per bucket, and selection round-robins across buckets so every season
+contributes before any season contributes twice. Within a bucket, observations
+with at least two agreeing identifications come first. No observer may supply
+more than two of a taxon's photos.
+
+M2 made one request for 200 observations and took the first eight usable ones.
+Every rule it stated was satisfied and the result was still wrong: an
+unstratified page is a seasonally and socially clustered sample. Bloodroot
+photographed in April is bloodroot in flower, and a learner taught only that
+cannot identify its leaves in July; one enthusiastic local observer can supply
+much of a taxon's records, so the pack teaches their camera and their habitat.
+This is an educational-quality defect, not a cost defect, and it is invisible in
+every count M2 reported — eight photos from eight distinct observations in one
+week of one spring looks identical, in the stats, to eight photos across a year.
+
+Spread is ranked *above* identification confidence deliberately. A
+thinly-confirmed photo of a plant in fruit teaches something no third flowering
+photo can, so trading it for confidence would trade a real gap for a marginal
+gain. The confidence floor that actually held is recorded per taxon, so the
+compromise stays visible rather than assumed. Empty buckets are normal — a
+spring ephemeral has no October records — and are recorded as zero rather than
+treated as an error, because failing on them would drop precisely the plants
+whose seasonality is most worth teaching. The cost is four requests per taxon
+instead of one: about 1200 requests and twenty minutes for a 300-taxon state,
+still an order of magnitude inside iNaturalist's daily guidance, and against a
+much smaller cache than the single-request version produced.
+
+### 2026-08-07 — One fetch at a time, enforced by a lockfile
+
+`fetch` takes an exclusive lock on `work/.fetch.lock` before any network call.
+A second concurrent fetch exits 7 having made no request; a lock whose owning
+PID is dead is reported as stale and broken only with `--force`.
+
+Sift's rate limiting comes from `pyinaturalist` and is per-process, so two
+concurrent fetches simply double our request rate against a free,
+donation-funded API. This is not hypothetical — it is what happens when a
+twenty-minute fetch looks stalled and somebody starts another in a second
+terminal, which is exactly what happened during M2 development. Being blocked
+would affect every Sift user at once, not just the person who did it.
+
+STANDARDS.md rule 6 set the precedent that a rule worth having gets a mechanism
+rather than a convention: the conftest socket blocker makes "tests never touch
+the network" unbreakable by accident. This does the same for "one fetch at a
+time". The cost is a lock file that can outlive a killed process, which is why
+staleness is detected and reported rather than either blocking forever or being
+silently stolen.
+
+### 2026-08-07 — Default fetch limit is 300, for a 250-taxon pack
+
+`--limit` defaults to 300 rather than the 250 a finished pack wants. M4 promotes
+candidates by matching them to USDA PLANTS, and unmatched taxa are dropped: a
+name iNaturalist recognises is not always one USDA carries, especially for
+recently split, merged or renamed species, and the two taxonomies are known not
+to align (`docs/sources.md`). Fetching exactly 250 would mean discovering the
+shortfall only after the expensive stage, then re-fetching to cover it — and the
+second fetch would pull the *next* 50 taxa by observation count, which are
+systematically less common and less well photographed than the first 250. The
+headroom costs about 200 extra requests now and avoids a biased top-up later. If
+M4's match rate turns out better than 83%, this can come back down; that is a
+tightening and needs no ADR.
+
+### 2026-08-07 — Throttle responses are waited out, not fatal
+
+`PyinaturalistFetcher` catches HTTP 429, waits — honouring `Retry-After` when
+the server sends one, otherwise backing off from 30 seconds and doubling — and
+retries up to four times before giving up with a message saying nothing was
+lost. This was found by the M2.1 gate run: a 1200-request fetch died 139
+requests in on a single throttle. `pyinaturalist` retries 500, 502, 503 and 504
+but not 429 (`RETRY_STATUSES`), so a fetch long enough to matter was near
+certain to die partway on any given day.
+
+This is error handling, not a second rate limiter. Request pacing stays entirely
+pyinaturalist's — one per second, sixty per minute, ten thousand per day, shared
+across processes through its SQLite bucket — and this code only decides what to
+do when the server has already said "slow down". Backoff starts near the
+per-minute window rather than at a token second, because a 429 means that window
+is already spent and retrying inside it just spends another request learning the
+same thing. Throttles are counted and logged rather than absorbed silently.
+
+Giving up is still possible, and is safe: everything already fetched is cached,
+so a re-run resumes rather than starting over. That property is why the fetch
+needs no checkpoint file, and it is what makes a fatal-on-429 fetch merely
+annoying rather than expensive.
