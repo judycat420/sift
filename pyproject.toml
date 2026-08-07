@@ -1,0 +1,152 @@
+[project]
+name = "sift"
+version = "0.1.0"
+description = "Provenance-preserving plant reference data pipeline."
+readme = "README.md"
+authors = [
+    { name = "judycat420", email = "judycat420@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28.1",
+    "pillow>=12.3.0",
+    "pydantic>=2.13.4",
+    "pyinaturalist>=0.21.1",
+    "typer>=0.27.1",
+    "zstandard>=0.25.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.2,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.16.1",
+]
+
+# ---------------------------------------------------------------------------
+# ruff — lint + format. The rule selection is how STANDARDS.md is enforced
+# mechanically rather than by review habit:
+#   D          -> module and public-function docstrings   (STANDARDS 2, 3)
+#   ANN        -> type hints on every signature           (STANDARDS 1)
+#   BLE/S110/  -> no bare except, no `pass` in except     (STANDARDS 5)
+#   S112/TRY
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "A",    # flake8-builtins (shadowing)
+    "ANN",  # flake8-annotations
+    "ARG",  # unused arguments
+    "B",    # flake8-bugbear
+    "BLE",  # flake8-blind-except
+    "C4",   # comprehensions
+    "D",    # pydocstyle
+    "DTZ",  # naive datetimes
+    "E",    # pycodestyle errors
+    "EM",   # exception message literals
+    "ERA",  # commented-out code
+    "F",    # pyflakes
+    "I",    # isort
+    "ICN",  # import conventions
+    "INP",  # implicit namespace packages
+    "ISC",  # implicit string concat
+    "N",    # pep8-naming
+    "PERF", # perflint
+    "PGH",  # blanket noqa / blanket type-ignore
+    "PIE",
+    "PL",   # pylint
+    "PT",   # pytest style
+    "PTH",  # use pathlib
+    "RET",
+    "RSE",
+    "RUF",
+    "S",    # bandit
+    "SIM",
+    "SLF",  # private member access
+    "T20",  # no stray print()
+    "TID",  # tidy imports
+    "TRY",  # exception antipatterns
+    "UP",   # pyupgrade
+    "W",    # pycodestyle warnings
+]
+ignore = [
+    "ISC001", # conflicts with `ruff format`
+    "D203",   # incompatible with D211 (we keep D211)
+    "D213",   # incompatible with D212 (we keep D212)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"  # Args/Returns/Raises sections, per STANDARDS 3.
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert is the entire point of a test
+    "D100",    # test modules need no WHY docstring
+    "D103",    # test names are the documentation
+    "PLR2004", # magic values are fine inside assertions
+    "SLF001",  # tests may reach into internals deliberately
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+# Markdown code fences are left alone: STANDARDS.md deliberately shows badly
+# written examples next to good ones, and the formatter would tidy them up.
+exclude = ["*.md"]
+
+# ---------------------------------------------------------------------------
+# mypy — strict, no exceptions. Every current dependency ships py.typed, so
+# there are no `ignore_missing_imports` overrides. Do not add one without first
+# checking for a stubs package; if you must, document why inline.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+disallow_any_unimported = true
+enable_error_code = [
+    "ignore-without-code", # bare `# type: ignore` is banned; must name the code
+    "redundant-expr",
+    "truthy-bool",
+    "possibly-undefined",
+]
+pretty = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--cov=sift",
+    "--cov-report=term-missing",
+    "--cov-fail-under=90",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/sift"]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]
