@@ -13,6 +13,9 @@ Any attempt to open a network socket during a test raises `NetworkAccessError`
 immediately, naming the address that was dialled. Loopback is left alone so
 local test servers still work. Mock outbound HTTP with `respx` against a
 recorded fixture in `tests/fixtures/` instead.
+
+The socket guard is a per-test `monkeypatch`, so it is installed independently in
+every xdist worker process; running the suite in parallel does not weaken it.
 """
 
 from __future__ import annotations
@@ -23,6 +26,21 @@ from typing import Any
 import pytest
 
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Hand the longest tests to the workers first.
+
+    `-n auto` distributes tests roughly in collection order, and the deck-wide
+    scans sit near the end of it. A 131-second test picked up at the 60-second
+    mark strands one worker for two minutes after the other fifteen have gone
+    idle — the suite's wall clock becomes that one test plus wherever it started,
+    which is most of what parallelism was supposed to buy.
+
+    Sorting is stable and keyed only on a marker, so every worker still collects
+    the identical order xdist requires of them.
+    """
+    items.sort(key=lambda item: item.get_closest_marker("slow") is None)
 
 
 class NetworkAccessError(RuntimeError):

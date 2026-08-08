@@ -35,6 +35,8 @@ dev = [
     "mypy>=2.3.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.8.0",
     "respx>=0.23.1",
     "ruff>=0.16.1",
 ]
@@ -156,12 +158,33 @@ addopts = [
     "-ra",
     "--doctest-modules",
     "--import-mode=importlib",
+    # Parallel by default. A suite slow enough to skip is a gate that is not
+    # run: at four minutes serial this one already let a commit land on an
+    # interrupted run. Every worker is its own process, so nothing here is a
+    # licence for shared state between tests — where two tests would have
+    # collided (the mypy snippet checks writing one `.mypy_cache`) the test was
+    # fixed, not the suite serialised.
+    "-n",
+    "auto",
     "--cov=sift_pack",
     "--cov-report=term-missing",
     "--cov-fail-under=90",
 ]
 doctest_optionflags = ["ELLIPSIS", "IGNORE_EXCEPTION_DETAIL"]
 filterwarnings = ["error"]
+
+# A hang and a failure look identical from outside, except the hang also takes
+# the build's wall clock with it. 60s is the ceiling for an ordinary test: the
+# slowest of them runs in about 6s under `--cov`, so this fires on a deadlock
+# and not on a slow machine. The handful of whole-deck scans genuinely need
+# longer and say so at their own definitions, with the measurement that forced
+# the number (tests/test_study_matcher.py, DECK_SCAN_TIMEOUT).
+# Per STANDARDS.md rule 8 this is a ratchet — tighten freely.
+timeout = 60
+
+markers = [
+    "slow: whole-deck or whole-corpus scans. Deselected by `make test-fast` for the inner loop; `make check` runs them.",
+]
 
 [tool.coverage.run]
 branch = true

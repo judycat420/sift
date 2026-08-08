@@ -315,8 +315,20 @@ def test_mypy_rejects_a_taxon_built_without_a_source(tmp_path: Path) -> None:
         ")\n",
         encoding="utf-8",
     )
+    # `--cache-dir` under `tmp_path` for the reason given in
+    # tests/test_type_level_guarantees.py: `--no-incremental` does not stop mypy
+    # writing its cache, and these checks run concurrently under xdist.
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-        [sys.executable, "-m", "mypy", "--strict", "--no-incremental", str(snippet)],
+        [
+            sys.executable,
+            "-m",
+            "mypy",
+            "--strict",
+            "--no-incremental",
+            "--cache-dir",
+            str(tmp_path / ".mypy_cache"),
+            str(snippet),
+        ],
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,

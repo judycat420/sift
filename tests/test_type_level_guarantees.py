@@ -71,6 +71,13 @@ def _run_mypy(source: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
             "mypy",
             "--strict",
             "--no-incremental",
+            # `--no-incremental` stops mypy *reading* a cache; it still creates
+            # and writes the SQLite cache under cwd. With the suite running on
+            # xdist workers these snippet checks overlap, so a shared
+            # `<repo>/.mypy_cache` would be several processes writing one set of
+            # database files. Each run gets its own under `tmp_path`.
+            "--cache-dir",
+            str(tmp_path / ".mypy_cache"),
             "--no-error-summary",
             "--hide-error-context",
             str(snippet),

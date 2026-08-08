@@ -5,6 +5,12 @@ matters: the guard's job is to notice that an answer fits some *other* card, and
 a three-card fixture would only ever contain the confusions somebody thought to
 invent. Every confusion pair asserted here was found by scanning the actual
 manifest, and each is named in the test that uses it.
+
+Tests whose body walks the whole deck carry `@pytest.mark.slow`: between them
+they are most of the suite's wall clock (one takes ~131s under `--cov`), and
+`make test-fast` leaves them out so the inner loop stays worth running. They are
+not optional — `make check` runs them, and they are the only tests that would
+notice a future pack introducing a confusion nobody has thought of yet.
 """
 
 from __future__ import annotations
@@ -36,6 +42,19 @@ from tests.study_fixtures import (
     taxon_full_name,
     taxon_id,
 )
+
+DECK_SCAN_TIMEOUT = 300
+"""Seconds allowed for a scan that walks the whole deck.
+
+The suite's global limit is 60s (pyproject.toml). These few scans need more, and
+not because they are at risk of hanging: the longest measures ~22s on its own and
+~131s under `--cov`, because coverage traces every line of the match cascade and
+the scan runs it about a million times. 60s would fail the gate on a green build,
+which is the one thing a timeout must never do.
+
+300s is still a bound — a genuinely deadlocked scan is reported in five minutes
+rather than never — and it applies to three tests, not to the suite.
+"""
 
 # --- the real confusion pairs found in the Michigan deck -----------------------
 #
@@ -121,6 +140,7 @@ def test_exact_answers_are_correct_at_level_one(text: str, asked: str) -> None:
     assert outcome.confused_with is None
 
 
+@pytest.mark.slow
 def test_every_accepted_answer_in_the_deck_scores_correct_for_its_own_card() -> None:
     # The deck-wide sanity check: if the guard ever blocks a card's own answer,
     # that card becomes unanswerable and nothing else in this file would notice.
@@ -336,6 +356,7 @@ def test_a_misspelled_genus_still_earns_partial() -> None:
     assert outcome.cascade_level == MISSPELLING
 
 
+@pytest.mark.slow
 def test_partial_is_never_returned_for_a_genus_rank_card() -> None:
     # There the genus is the whole answer, so there is nothing to withhold.
     deck = deck_of()
@@ -480,6 +501,7 @@ def test_an_exact_match_is_exempt_from_the_guard() -> None:
 # --- ambiguity -------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_the_real_deck_has_no_shared_common_name() -> None:
     # Recorded as a fact about the Michigan pack, not an assumption: the
     # ambiguity path below therefore runs against a constructed fixture, and
@@ -508,6 +530,7 @@ def test_ambiguity_is_reported_from_either_side() -> None:
 # --- the partial-credit guard ------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_no_michigan_genus_collides_with_another_cards_answer() -> None:
     # Recorded as a fact about this pack: no genus name is also some other
     # card's full answer, so the branch below has no real case to run against
@@ -649,6 +672,8 @@ def test_a_matched_result_always_names_the_rule_that_granted_it(text: str, asked
         assert outcome.matched_taxon_id is None or outcome.outcome == "ambiguous"
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(DECK_SCAN_TIMEOUT)
 def test_edit_distance_is_reported_only_for_the_misspelling_rule() -> None:
     deck = deck_of()
     for taxon in MI_PACK.taxa[:60]:
@@ -661,6 +686,8 @@ def test_edit_distance_is_reported_only_for_the_misspelling_rule() -> None:
 # --- properties ---------------------------------------------------------------------
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(DECK_SCAN_TIMEOUT)
 def test_no_exact_answer_for_one_taxon_is_ever_correct_for_another() -> None:
     """The property the whole guard exists to hold, checked over the real deck.
 
@@ -741,6 +768,8 @@ def test_the_guard_only_ever_removes_credit(text: str, asked: str) -> None:
     )
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(DECK_SCAN_TIMEOUT)
 def test_every_pair_of_cards_in_a_genus_is_distinguishable_or_declared_the_same() -> None:
     # Either two cards ask different questions (and each other's answers are
     # refused), or they ask the same one (and share an answer openly). There is

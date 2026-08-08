@@ -127,12 +127,19 @@ def _corpus() -> list[str]:
     return names
 
 
+# The three corpus properties below expand to roughly 3,000 test items — the
+# bulk of the suite's collection, for a fixed set of properties over every name
+# in the shipped pack. Marked `slow` so `make test-fast` can leave them out;
+# `make check` runs them, and they are what would catch a normalisation change
+# that only misbehaves on one real name.
+@pytest.mark.slow
 @pytest.mark.parametrize("text", _corpus())
 def test_normalisation_is_idempotent(text: str) -> None:
     once = normalize(text)
     assert normalize(once) == once
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("text", _corpus())
 def test_normalised_text_has_no_edge_whitespace_or_double_spaces(text: str) -> None:
     once = normalize(text)
@@ -140,6 +147,7 @@ def test_normalised_text_has_no_edge_whitespace_or_double_spaces(text: str) -> N
     assert "  " not in once
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("text", _corpus())
 def test_normalisation_never_introduces_combining_marks(text: str) -> None:
     assert not any(unicodedata.combining(c) for c in normalize(text))

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck test check clean
+.PHONY: help install lint format typecheck test test-fast check clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -21,6 +21,14 @@ typecheck:  ## mypy --strict
 
 test:  ## pytest with coverage
 	uv run pytest
+
+# The inner loop: everything except the whole-deck and whole-corpus scans, and
+# no coverage. Not a substitute for `make check` — it is what makes running the
+# gate before every commit cheap enough to actually do. The 90% floor is only
+# meaningful over the full suite, so measuring it here would either fail
+# spuriously or invite lowering it; `--no-cov` refuses the question instead.
+test-fast:  ## pytest without the slow scans or coverage — the inner loop
+	uv run pytest -m "not slow" --no-cov
 
 check: install lint typecheck test  ## Everything CI runs
 
