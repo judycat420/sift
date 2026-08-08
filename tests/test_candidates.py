@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any, get_args
 
@@ -51,6 +52,10 @@ def _photo(observation_id: int, taxon_id: int = 47911, **overrides: Any) -> Cand
         "height": 768,
         "identification_agreements": 2,
         "month_bucket": "A",
+        "source_url": (
+            "https://inaturalist-open-data.s3.amazonaws.com/photos/"
+            f"{observation_id * 10}/square.jpg"
+        ),
     }
     fields.update(overrides)
     return CandidatePhoto(**fields)
@@ -65,7 +70,6 @@ def _taxon(taxon_id: int = 47911, **overrides: Any) -> CandidateTaxon:  # noqa: 
         "genus": "Asclepias",
         "family": "Apocynaceae",
         "obs_count": 9108,
-        "min_identification_agreement": 2,
         "months_represented": 1,
         "distinct_observers": 4,
         "images": [_photo(n, taxon_id, photographer_login=f"obs{n}") for n in range(1, 5)],
@@ -109,7 +113,6 @@ def test_candidate_taxon_field_set_is_exactly_this() -> None:
         "genus",
         "family",
         "obs_count",
-        "min_identification_agreement",
         "months_represented",
         "distinct_observers",
         "images",
@@ -147,6 +150,7 @@ def test_candidate_photo_field_set_is_exactly_this() -> None:
         "height",
         "identification_agreements",
         "month_bucket",
+        "source_url",
     }
 
 
@@ -259,3 +263,33 @@ def test_unknown_pool_fields_are_rejected() -> None:
 
 def test_an_empty_pool_is_valid() -> None:
     assert _pool(candidates=[], dropped=[]).considered() == 0
+
+
+# --- the removed agreement statistic ------------------------------------------
+
+
+def test_candidate_taxon_has_no_agreement_statistic() -> None:
+    # Deleted in M2.1's correction pass: `num_identification_agreements` counts
+    # agreements with the observer's own ID, and research grade needs only two
+    # identifications, so an ordinary record reports 1 whatever the taxon.
+    # See docs/decisions.md, 2026-08-07.
+    assert "min_identification_agreement" not in CandidateTaxon.model_fields
+    assert not [f for f in CandidateTaxon.model_fields if "agreement" in f]
+
+
+def test_an_m2_1_pool_fails_to_parse_rather_than_ignoring_the_dropped_key() -> None:
+    # extra="forbid" means a pool written before the field was removed is a
+    # loud parse error, not a silently-downgraded read. Anyone holding an old
+    # work/ artefact learns that it is stale instead of getting a pool whose
+    # provenance quietly differs from what this build would produce.
+    payload = json.loads(_pool().model_dump_json())
+    payload["candidates"][0]["min_identification_agreement"] = 1
+    with pytest.raises(ValidationError, match="min_identification_agreement"):
+        CandidatePool.model_validate(payload)
+
+
+def test_the_raw_per_photo_agreement_count_is_still_recorded() -> None:
+    # The observed datum stays — it is a verbatim API value, not a derived
+    # claim, and selection still uses it as a weak within-bucket tiebreaker.
+    assert "identification_agreements" in CandidatePhoto.model_fields
+    assert _photo(1).identification_agreements == 2

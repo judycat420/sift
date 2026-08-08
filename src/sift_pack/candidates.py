@@ -140,6 +140,7 @@ class CandidatePhoto(_Frozen):
         ...     height=2048,
         ...     identification_agreements=1,
         ...     month_bucket="B",
+        ...     source_url="https://inaturalist-open-data.s3.amazonaws.com/photos/1/square.jpg",
         ... )
         >>> photo.license
         'cc0'
@@ -167,7 +168,16 @@ class CandidatePhoto(_Frozen):
     width: int = Field(ge=1, description="Original pixel width.")
     height: int = Field(ge=1, description="Original pixel height.")
     identification_agreements: int = Field(
-        ge=0, description="Agreeing IDs on the source observation, at fetch time."
+        ge=0,
+        description=(
+            "Agreeing IDs on the source observation at fetch time, recorded "
+            "verbatim. NOT a confidence measure: it counts identifications "
+            "agreeing with the observer's own, and research grade needs only two "
+            "identifications in total, so an ordinary record reports 1 whatever "
+            "the taxon. Kept as an observed datum and used only as a weak "
+            "within-bucket tiebreaker; no taxon-level statistic is derived from "
+            "it. See docs/decisions.md, 2026-08-07."
+        ),
     )
     month_bucket: str = Field(
         min_length=1,
@@ -175,6 +185,17 @@ class CandidatePhoto(_Frozen):
             "Which seasonal bucket the source observation was sampled from. "
             "Recorded so that seasonal spread is auditable in the finished pool "
             "rather than merely intended at selection time."
+        ),
+    )
+    source_url: str = Field(
+        min_length=1,
+        description=(
+            "Where the image bytes live, verbatim from the API. Carried on the "
+            "candidate so the resolve stage reads one artefact rather than "
+            "reaching back into the response cache, and so a pool is a complete "
+            "description of what it would take to build the pack. Never rebuilt "
+            "from the photo id: extensions vary and a templated URL would 404 "
+            "on an unknown fraction."
         ),
     )
 
@@ -193,7 +214,6 @@ class CandidateTaxon(_Frozen):
         ...     genus="Asclepias",
         ...     family="Apocynaceae",
         ...     obs_count=9108,
-        ...     identification_agreement=2,
         ...     images=[],
         ... )
         Traceback (most recent call last):
@@ -216,15 +236,6 @@ class CandidateTaxon(_Frozen):
     )
     family: str = Field(min_length=1, description="Family name, read from the taxon's ancestors.")
     obs_count: int = Field(ge=0, description="Research-grade observations in this place.")
-    min_identification_agreement: int = Field(
-        ge=0,
-        description=(
-            "Minimum agreeing-ID count across the selected photos' observations. "
-            "The floor rather than the mean, so one heavily-confirmed observation "
-            "cannot mask several shaky ones. A learner-facing quality signal: M7 "
-            "surfaces it so somebody can tell a well-confirmed card from a thin one."
-        ),
-    )
     months_represented: int = Field(
         ge=1,
         le=4,
@@ -296,13 +307,6 @@ class CandidateTaxon(_Frozen):
         if self.months_represented != len(buckets):
             errors.append(
                 f"months_represented is {self.months_represented}, photos span {len(buckets)}"
-            )
-
-        floor = min(photo.identification_agreements for photo in self.images)
-        if self.min_identification_agreement != floor:
-            errors.append(
-                f"min_identification_agreement is {self.min_identification_agreement}, "
-                f"photos floor at {floor}"
             )
 
         if errors:

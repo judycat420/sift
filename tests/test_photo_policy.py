@@ -40,6 +40,10 @@ def _observation(
                 "id": observation_id * 100 + n,
                 "license_code": "cc0",
                 "original_dimensions": {"width": 10, "height": 10},
+                "url": (
+                    "https://inaturalist-open-data.s3.amazonaws.com/photos/"
+                    f"{observation_id * 100 + n}/square.jpg"
+                ),
             }
             for n in range(photos)
         ],
@@ -121,15 +125,15 @@ def test_every_bucket_contributes_before_any_contributes_twice(tmp_path: Path) -
     assert max(counts.values()) - min(counts.values()) <= 1
 
 
-def test_spread_beats_confidence(tmp_path: Path) -> None:
-    # Bucket A is full of heavily-confirmed observations; bucket C has one
-    # thinly-confirmed record. The thin one must still be selected, because a
-    # photo from another season teaches something no third spring photo can.
+def test_a_lone_record_from_an_unrepresented_season_is_still_taken(tmp_path: Path) -> None:
+    # Bucket A offers ten candidates, bucket C exactly one. The single autumn
+    # photo must still be selected: it teaches something no eleventh spring
+    # photo can. Spread is the only thing selection optimises for.
     selection = _run(
         tmp_path,
         {
-            "A": [_observation(n, f"spring{n}", agreements=9) for n in range(1, 11)],
-            "C": [_observation(99, "autumn", agreements=0)],
+            "A": [_observation(n, f"spring{n}") for n in range(1, 11)],
+            "C": [_observation(99, "autumn")],
         },
     )
     assert selection.drop is None
@@ -158,23 +162,44 @@ def test_a_completely_empty_field_drops_without_erroring(tmp_path: Path) -> None
     assert selection.bucket_observations == {b.label: 0 for b in MONTH_BUCKETS}
 
 
-# --- rule (d): confidence, within a bucket ------------------------------------
+# --- the within-bucket tiebreak claims nothing ---------------------------------
 
 
-def test_confirmed_observations_come_first_within_a_bucket(tmp_path: Path) -> None:
+def test_agreement_counts_do_not_influence_selection(tmp_path: Path) -> None:
+    # Formerly rule (d). A high agreement count means an observation drew an
+    # extra identifier, which tracks being photogenic or contentious rather
+    # than being right, so it must not decide which photos a learner sees.
+    field = {
+        "A": [
+            _observation(1, "a", agreements=0),
+            _observation(2, "b", agreements=0),
+            _observation(3, "c", agreements=5),
+            _observation(4, "d", agreements=7),
+        ]
+    }
+    selection = _run(tmp_path, field)
+    assert [p.observation_id for p in selection.photos] == [1, 2, 3, 4]
+
+    # Same observations, agreement counts permuted: the same photos, in the
+    # same order. Selection cannot see the field at all.
+    permuted = {
+        "A": [
+            _observation(1, "a", agreements=9),
+            _observation(2, "b", agreements=4),
+            _observation(3, "c", agreements=0),
+            _observation(4, "d", agreements=1),
+        ]
+    }
+    other = _run(tmp_path / "permuted", permuted)
+    assert [p.observation_id for p in other.photos] == [p.observation_id for p in selection.photos]
+
+
+def test_within_a_bucket_order_is_ascending_observation_id(tmp_path: Path) -> None:
     selection = _run(
         tmp_path,
-        {
-            "A": [
-                _observation(1, "a", agreements=0),
-                _observation(2, "b", agreements=0),
-                _observation(3, "c", agreements=5),
-                _observation(4, "d", agreements=7),
-            ]
-        },
+        {"A": [_observation(oid, f"p{oid}") for oid in (70, 10, 50, 30)]},
     )
-    agreements = [photo.identification_agreements for photo in selection.photos]
-    assert agreements[:2] == [7, 5]
+    assert [p.observation_id for p in selection.photos] == [10, 30, 50, 70]
 
 
 # --- rule (e): never relax to reach the floor ---------------------------------

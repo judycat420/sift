@@ -59,9 +59,14 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
     deliberately does not use it. It is curator-maintained, sparsely populated,
     and disagrees with USDA PLANTS; nativity comes from USDA (M3). See
     `docs/decisions.md`, 2026-08-07.
-  - `num_identification_agreements` counts agreements at fetch time and can fall
-    as well as rise when identifications are withdrawn. Sift records the value
-    it saw, with the fetch timestamp, rather than treating it as stable.
+  - `num_identification_agreements` is not a confidence measure and must not be
+    used as one. It counts identifications agreeing with the observer's own, and
+    research grade requires only two identifications in total, so an ordinary
+    research-grade record reports 1 regardless of how hard the taxon is —
+    verified on skunk cabbage versus a *Carex*. It also moves over time as
+    identifications are added or withdrawn. Sift records the per-photo value
+    verbatim, derives no taxon-level statistic from it, and does not let it
+    influence which photos are selected; see `docs/decisions.md`, 2026-08-07.
   - Observation photos carry per-photo licences that differ from the
     observation's own licence. Sift filters on the photo licence, and re-checks
     it client-side, because a server-side filter that stops working is silent.

@@ -25,13 +25,24 @@ from __future__ import annotations
 import statistics
 from collections import Counter
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import get_args
 
 from sift_pack.candidates import CandidatePool, DropReason
 from sift_pack.inat.photos import MONTH_BUCKETS
+from sift_pack.manifest import SourceRef
+from sift_pack.resolved import ResolvedPool, ResolveDropReason
 
-__all__ = ["Distribution", "PoolStats", "empty_stats", "human_bytes", "summarise"]
+__all__ = [
+    "Distribution",
+    "PoolStats",
+    "ResolvedStats",
+    "empty_stats",
+    "human_bytes",
+    "summarise",
+    "summarise_resolved",
+]
 
 _LOW_IMAGE_CEILING = 5
 """Candidates with at most this many photos are the thin end of the pack."""
@@ -138,7 +149,6 @@ class PoolStats:
         thin_image_taxa: Candidates with 4-5 photos.
         rich_image_taxa: Candidates with 6-8 photos.
         obs_count: Research-grade observation count distribution.
-        agreement: Identification-agreement floor distribution.
         months: Seasonal-spread distribution.
         observers: Distinct-observer distribution.
         bucket_observations: Observations each seasonal bucket returned.
@@ -152,7 +162,6 @@ class PoolStats:
     thin_image_taxa: int
     rich_image_taxa: int
     obs_count: Distribution
-    agreement: Distribution
     months: Distribution
     observers: Distribution
     bucket_observations: dict[str, int]
@@ -194,7 +203,6 @@ class PoolStats:
         lines.append(self.obs_count.render("obs_count               "))
         lines.append(self.months.render("months_represented      "))
         lines.append(self.observers.render("distinct_observers      "))
-        lines.append(self.agreement.render("min_identification_agmt "))
 
         lines.append("month buckets:")
         for bucket in MONTH_BUCKETS:
@@ -239,7 +247,6 @@ def empty_stats() -> PoolStats:
         thin_image_taxa=0,
         rich_image_taxa=0,
         obs_count=absent,
-        agreement=absent,
         months=absent,
         observers=absent,
         bucket_observations={},
@@ -304,10 +311,149 @@ def summarise(pool: CandidatePool, cache_dir: Path | None = None) -> PoolStats:
         thin_image_taxa=thin,
         rich_image_taxa=rich,
         obs_count=_distribution([c.obs_count for c in pool.candidates]),
-        agreement=_distribution([c.min_identification_agreement for c in pool.candidates]),
         months=_distribution([c.months_represented for c in pool.candidates]),
         observers=_distribution([c.distinct_observers for c in pool.candidates]),
         bucket_observations=dict(pool.bucket_observations),
         bucket_photos=dict(bucket_photos),
         cache_bytes=None if cache_dir is None else directory_size(cache_dir),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedStats:
+    """Everything `sift-pack stats --resolved` prints.
+
+    Attributes:
+        taxa: Taxa whose images are stored.
+        images: Stored image records across those taxa.
+        unique_digests: Distinct images, after content-address dedupe.
+        losses_by_reason: Photo and taxon losses at the resolve stage.
+        taxa_dropped: Taxa that fell below the image floor while resolving.
+        store_bytes: Size of the image store on disk.
+        image_bytes: Per-image size distribution.
+        months: Seasonal-spread distribution, recomputed from stored photos.
+        observers: Distinct-observer distribution.
+    """
+
+    taxa: int
+    images: int
+    unique_digests: int
+    losses_by_reason: dict[str, int]
+    taxa_dropped: int
+    store_bytes: int
+    image_bytes: Distribution
+    months: Distribution
+    observers: Distribution
+
+    def render(self) -> str:
+        """Format the statistics as a plain-text report.
+
+        Returns:
+            A multi-line report.
+
+        Example:
+            >>> print(_empty_resolved().render().splitlines()[0])
+            taxa resolved: 0
+        """
+        lines = [f"taxa resolved: {self.taxa}"]
+        lines.append(f"taxa dropped at resolve: {self.taxa_dropped}")
+        lines.append(f"images stored: {self.images} records, {self.unique_digests} distinct")
+        deduped = self.images - self.unique_digests
+        lines.append(f"  deduped by content address: {deduped}")
+
+        lines.append("losses:")
+        if self.losses_by_reason:
+            lines.extend(
+                f"  {reason}: {count}" for reason, count in sorted(self.losses_by_reason.items())
+            )
+        else:
+            lines.append("  (none)")
+
+        lines.append("distributions:")
+        lines.append(self.image_bytes.render("image bytes        "))
+        lines.append(self.months.render("months_represented "))
+        lines.append(self.observers.render("distinct_observers "))
+
+        lines.append(f"store on disk: {human_bytes(self.store_bytes)}")
+        return "\n".join(lines)
+
+
+def _empty_resolved() -> ResolvedStats:
+    """A zeroed resolved report, used in doctests.
+
+    Returns:
+        Stats describing a pool with nothing in it.
+
+    Example:
+        >>> _empty_resolved().taxa
+        0
+    """
+    absent = Distribution(median=None, p10=None)
+    return ResolvedStats(
+        taxa=0,
+        images=0,
+        unique_digests=0,
+        losses_by_reason={},
+        taxa_dropped=0,
+        store_bytes=0,
+        image_bytes=absent,
+        months=absent,
+        observers=absent,
+    )
+
+
+def summarise_resolved(pool: ResolvedPool, store_dir: Path | None = None) -> ResolvedStats:
+    """Compute the statistics for one resolved pool.
+
+    Args:
+        pool: The resolved pool to describe.
+        store_dir: Image store to measure, or `None` to report zero.
+
+    Returns:
+        The computed statistics.
+
+    Example:
+        >>> summarise_resolved(_empty_resolved_pool()).taxa
+        0
+    """
+    losses: Counter[str] = Counter(record.reason for record in pool.resolve_dropped)
+    losses_by_reason = {reason: losses.get(reason, 0) for reason in get_args(ResolveDropReason)}
+
+    sizes = [photo.bytes for taxon in pool.taxa for photo in taxon.images]
+    digests = {photo.sha256 for taxon in pool.taxa for photo in taxon.images}
+
+    return ResolvedStats(
+        taxa=len(pool.taxa),
+        images=len(sizes),
+        unique_digests=len(digests),
+        losses_by_reason=losses_by_reason,
+        taxa_dropped=losses_by_reason.get("insufficient_resolved_images", 0),
+        store_bytes=0 if store_dir is None else directory_size(store_dir),
+        image_bytes=_distribution(sizes),
+        months=_distribution([t.months_represented for t in pool.taxa]),
+        observers=_distribution([t.distinct_observers for t in pool.taxa]),
+    )
+
+
+def _empty_resolved_pool() -> ResolvedPool:
+    """An empty resolved pool, for doctests.
+
+    Returns:
+        A valid pool with no taxa.
+
+    Example:
+        >>> _empty_resolved_pool().state
+        'MI'
+    """
+    when = datetime(2026, 8, 7, tzinfo=UTC)
+    return ResolvedPool(
+        domain="plants",
+        state="MI",
+        place_id=29,
+        fetched_at=when,
+        resolved_at=when,
+        sources=[SourceRef(name="x", version="1", retrieved_at=when, url="https://x.invalid/")],
+        taxa=[],
+        dropped=[],
+        resolve_dropped=[],
     )

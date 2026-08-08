@@ -1,12 +1,29 @@
 # Decisions
 
 ADR-lite. One dated entry per decision, one paragraph each: what was decided,
-why, and what it costs. Append only — if a decision is reversed, add a new
-entry that supersedes the old one rather than editing history.
+why, and what it costs.
+
+## Convention
+
+Every entry carries a `Status:` line directly under its heading:
+
+- **`Status: Active`** — this is current guidance. Build to it.
+- **`Status: Superseded by <date> — <title>`** — this records what was decided
+  at the time and why. It is history, not instruction. Follow the entry it
+  points to.
+
+Entries are append-only in substance: no reasoning is ever deleted or rewritten,
+because the reasoning that led to a wrong turn is the most useful thing in this
+file. When a decision is replaced, the new decision gets its own dated entry and
+the old entry changes in exactly two ways — its `Status:` line, and its title, so
+the title describes what was decided then rather than asserting it as current.
+Nothing else in a superseded entry is touched.
 
 ---
 
 ### 2026-08-05 — Sift is a separate application from Loam
+
+Status: Active
 
 Sift is built as its own application with its own repository, dependencies and
 release cycle; it shares no Python package with Loam. If the two need to
@@ -19,6 +36,8 @@ bridge format; that is cheaper than a shared dependency that neither project
 can move independently.
 
 ### 2026-08-05 — Licences: CC0, CC-BY and CC-BY-SA only; NonCommercial excluded
+
+Status: Active
 
 Sift ingests only sources licensed CC0, CC-BY or CC-BY-SA, and explicitly
 excludes anything carrying a NonCommercial (NC) restriction, along with
@@ -34,6 +53,8 @@ provenance wrapper.
 
 ### 2026-08-05 — `inat_taxon_id` is the primary key; names are mutable attributes
 
+Status: Active
+
 Every taxon record is keyed on its iNaturalist taxon ID. Scientific and common
 names are stored as attributes of that record, never as identifiers, and no
 lookup path resolves a name to data without going through an ID first.
@@ -46,6 +67,8 @@ churn shows up as an explicit ID remap we can detect and record, rather than as
 data quietly drifting under us.
 
 ### 2026-08-05 — Metadata from the iNaturalist API, image bytes from the open-data S3 bucket
+
+Status: Active
 
 Taxon and observation metadata is fetched from the iNaturalist API; image bytes
 are fetched from the `inaturalist-open-data` S3 bucket, never by scraping
@@ -61,6 +84,8 @@ lag is acceptable because images are cached and metadata is not.
 
 ### 2026-08-06 — The build half is the `sift_pack` package; the distribution stays `sift`
 
+Status: Active
+
 Python code lives in `src/sift_pack/`, published by a distribution still named
 `sift` and exposed as the `sift-pack` console script. The split names the two
 halves of the system: `sift_pack` builds packs and is the only half that talks
@@ -72,6 +97,8 @@ indirection in `pyproject.toml` (`tool.uv.build-backend.module-name`) and a
 package name that does not match the import people expect from the repo name.
 
 ### 2026-08-06 — Bird axis 1 is seasonality, not nativity
+
+Status: Active
 
 When the birds domain is implemented, its second axis will be seasonality —
 resident, summer, winter, migrant — and not the native/introduced distinction
@@ -89,6 +116,8 @@ the registry that cannot be built today; that is the honest price.
 
 ### 2026-08-06 — `axis1_answer` returns `None` for "cannot determine", and callers must drop
 
+Status: Active
+
 The domain protocol's `axis1_answer` returns `Axis1Result | None`, where `None`
 means the domain could not determine the claim. Callers are required to drop
 the taxon and count the drop; there is no default, no fallback to the commonest
@@ -104,6 +133,8 @@ obligation to handle `None`. An empty deck is the correct output for a build
 that knows nothing.
 
 ### 2026-08-07 — The pipeline splits: `CandidatePool` from iNaturalist, `Manifest` after promotion
+
+Status: Active
 
 M1 proved a `Manifest` cannot be built from iNaturalist data alone: `Taxon`
 requires an axis-1 source, and iNaturalist does not know whether a plant is
@@ -125,6 +156,8 @@ that no half-built taxon exists anywhere in the system.
 
 ### 2026-08-07 — `CandidatePhoto` carries no `sha256` or `bytes`
 
+Status: Active
+
 `manifest.Image` requires a content hash and a byte size; `CandidatePhoto`, the
 photo record inside a candidate pool, has neither. The iNaturalist API does not
 return them — they can only be computed from the image bytes, which come from
@@ -140,6 +173,8 @@ at M2 at all; it exits non-zero saying so rather than emitting an empty manifest
 which would falsely claim that promotion ran and rejected everything.
 
 ### 2026-08-07 — Taxa below 50 research-grade observations are dropped
+
+Status: Active
 
 A taxon needs at least 50 research-grade observations in the target place to
 enter a candidate pool. The threshold is doing two jobs. It is a usefulness
@@ -158,6 +193,8 @@ Revisit it per-region if packs come out thin. Tightening it needs no ADR;
 lowering it does (rule 8).
 
 ### 2026-08-07 — Tests mock at the cache seam, not with respx
+
+Status: Active
 
 STANDARDS.md rule 6 names `respx` as the mocking mechanism. `respx` intercepts
 `httpx`, and the iNaturalist client is `pyinaturalist`, which is built on
@@ -178,6 +215,8 @@ auditable by reading it.
 
 ### 2026-08-07 — The cache stores projections, not raw responses
 
+Status: Active
+
 `InatClient` caches `sift_pack.inat.projections.project()` output — the fields
 the parsers actually read — rather than whole response bodies. M2 cached raw and
 paid 1.5 GB per state to answer four questions about it. Size is the smaller
@@ -197,7 +236,16 @@ no format marker; the client detects that and refuses to use the directory,
 naming the `rm -rf` rather than silently re-fetching around gigabytes of dead
 weight.
 
-### 2026-08-07 — Photos are sampled month-stratified, and selected for spread before confidence
+### 2026-08-07 — Month-stratified photo sampling, originally ranked spread above agreement count
+
+Status: Superseded by 2026-08-07 — Identification agreement removed from selection
+
+Superseded only in its second criterion. Month stratification, the round-robin
+across buckets, the per-observer cap and the four-photo floor are all still
+current; what follows describes them accurately. The part that no longer holds
+is the ranking of seasonal spread *above identification confidence*, which
+presumed agreement count measured confidence. It does not. There is no longer a
+second criterion for spread to be ranked ahead of.
 
 Each taxon's photos come from four requests — months 3-5, 6-7, 8-9, and 10-2 —
 at 25 per bucket, and selection round-robins across buckets so every season
@@ -229,6 +277,8 @@ much smaller cache than the single-request version produced.
 
 ### 2026-08-07 — One fetch at a time, enforced by a lockfile
 
+Status: Active
+
 `fetch` takes an exclusive lock on `work/.fetch.lock` before any network call.
 A second concurrent fetch exits 7 having made no request; a lock whose owning
 PID is dead is reported as stale and broken only with `--force`.
@@ -249,6 +299,8 @@ silently stolen.
 
 ### 2026-08-07 — Default fetch limit is 300, for a 250-taxon pack
 
+Status: Active
+
 `--limit` defaults to 300 rather than the 250 a finished pack wants. M4 promotes
 candidates by matching them to USDA PLANTS, and unmatched taxa are dropped: a
 name iNaturalist recognises is not always one USDA carries, especially for
@@ -262,6 +314,8 @@ M4's match rate turns out better than 83%, this can come back down; that is a
 tightening and needs no ADR.
 
 ### 2026-08-07 — Throttle responses are waited out, not fatal
+
+Status: Active
 
 `PyinaturalistFetcher` catches HTTP 429, waits — honouring `Retry-After` when
 the server sends one, otherwise backing off from 30 seconds and doubling — and
@@ -283,3 +337,252 @@ Giving up is still possible, and is safe: everything already fetched is cached,
 so a re-run resumes rather than starting over. That property is why the fetch
 needs no checkpoint file, and it is what makes a fatal-on-429 fetch merely
 annoying rather than expensive.
+
+### 2026-08-07 — `min_identification_agreement` is deleted; the statistic measures nothing
+
+Status: Active
+
+`CandidateTaxon.min_identification_agreement` is removed entirely, not recomputed
+as a median or rehabilitated some other way. The field was uninformative by
+construction, and no aggregation of it can fix that.
+
+The mechanism: iNaturalist's `num_identification_agreements` counts
+identifications that agree with **the observer's own** identification, and
+research grade requires only two identifications in total. So the ordinary
+research-grade observation reports exactly 1 — not because the taxon is hard,
+not because the record is doubtful, but because two identifications is the
+threshold and the second one is the first agreement. The number is a restatement
+of the quality-grade filter we already applied, wearing the costume of a
+confidence measure.
+
+Verified against the Michigan pool: *Symplocarpus foetidus* (skunk cabbage,
+unmistakable — no other Michigan plant looks remotely like it) and *Carex
+intumescens* (a sedge, genuinely difficult, in a genus that defeats most
+non-specialists) return near-identical agreement profiles, `[2,2,2,3,2,1,2,3]`
+and `[2,3,3,1,2,2,2,2]`, and identical floors of 1. Across all 2400 photos the
+distribution is 33% ones, 53% twos, 12% three-or-more; across taxa, 249 of 300
+floor at 1. Taking the minimum over eight photos makes it worse — with eight
+draws one is very likely to be a 1 — but the underlying field would not have
+discriminated either.
+
+RECORDED REFUTED HYPOTHESIS
+---------------------------
+We first read the flat distribution as evidence that the statistic measured
+*obviousness* rather than *confidence* — the thought being that a distinctive
+plant gets confirmed once and moved on from, while a difficult one attracts
+argument, so a low floor might mark an easy taxon rather than a doubtful record.
+That was wrong, and the skunk-cabbage/sedge pair refutes it directly: the
+unmistakable species and the genuinely hard one are indistinguishable in this
+number. It measures neither confidence nor obviousness. It measures that the
+observation reached research grade, which we already knew, because we filtered
+on it.
+
+What survives is `CandidatePhoto.identification_agreements`, kept as a verbatim
+record of an API value rather than a derived claim, and used only as a weak
+tiebreaker within a seasonal bucket where the alternative is ordering by
+observation ID. No taxon-level statistic is derived from it and none is shown to
+a learner. Removing the field is a schema change: `extra="forbid"` means a pool
+written before this fails to parse, loudly, rather than quietly dropping the key
+and handing back a pool whose provenance differs from what this build produces.
+
+The cost is that Sift now has no per-taxon identification-confidence signal at
+all. That is the honest position — we had no such signal before either, only a
+number that looked like one.
+
+### 2026-08-07 — Identification agreement removed from selection
+
+Status: Active
+
+`PREFERRED_MIN_AGREEMENTS` is deleted and photo selection no longer reads
+`num_identification_agreements` at all. Within a seasonal bucket, observations
+are now taken in ascending observation-ID order: a tiebreak that asserts nothing
+about the observations it orders and makes selection reproducible from a given
+cache.
+
+This is the second consequence of the finding recorded in "`min_identification_agreement`
+is deleted; the statistic measures nothing" (2026-08-07). The first removed the
+place where the value was *reported*; this removes the last place where it
+influenced an *outcome*. Selection previously ordered by agreeing-ID count,
+which by that entry's mechanism ranks observations that drew an extra
+identifier — a property tracking whether a record was photogenic or contentious,
+not whether it was correctly identified. It was noise presented as signal, and
+worse, a future reader would reasonably assume a field named
+`num_identification_agreements` meant what its name suggests and build on it.
+
+The measured effect on the Michigan pool is larger than expected, and confirms
+the sort was doing real damage rather than being merely inert:
+
+| | share of photos reporting exactly 1 agreement |
+| --- | --- |
+| all 21,612 observations the buckets returned | 85.3% |
+| selected photos, old agreement sort | 33.0% |
+| selected photos, observation-ID tiebreak | 74.8% |
+
+The old sort steered roughly two thirds of every pack toward the ~15% of records
+that happened to attract an extra identifier. The residual gap between 74.8% and
+the corpus rate is the per-observer cap and one-photo-per-observation dedup, not
+a preference.
+
+Seasonal spread was unaffected: `months_represented` is bit-for-bit identical
+before and after the change — 4 taxa spanning one bucket, 12 spanning two, 30
+spanning three, 254 spanning all four. That is the clearest evidence available
+that the removed sort was orthogonal to the only property selection exists to
+protect. It changed which photos, never which seasons.
+
+The cost is that selection now makes no quality judgement below seasonal spread
+and the observer cap. That is the honest position: iNaturalist exposes no
+per-observation quality signal that survives inspection, and ordering by an
+arbitrary-but-fixed key is better than ordering by a meaningful-looking one that
+means nothing.
+
+### 2026-08-07 — Frequency ranking already selects for identifiability; genus demotion is a safety net
+
+Status: Active
+
+Ranking by observation frequency does most of the work that a
+difficulty filter would do, because the two properties are not independent:
+taxa that are hard to identify are also taxa that get recorded rarely. Nobody
+uploads the sedge they could not name, and the ones they do upload rarely reach
+research grade. Difficulty suppresses observation count, so the frequency cut
+that selects the top 300 of Michigan's 3390 plant taxa — the top 9% — is already
+filtering for identifiability without being asked to.
+
+Measured on the Michigan pool: 9 of 300 candidates sit in genera where even the
+common species need technical characters, mature fruit or microscopy —
+*Carex*, *Rubus*, *Salix*, *Crataegus*, *Amelanchier*, *Symphyotrichum*,
+*Solidago*, *Viola*, *Hieracium*, *Elymus* and the graminoids. They cluster in
+the bottom half of the ranking (ranks 68, 88, 131, 223, 232, 235, 256, 272, 284)
+and their median observation count is 1053 against 1499 for the pool as a whole.
+Several of the nine are distinctive at species level regardless — *Rubus
+parviflorus* and *Symphyotrichum novae-angliae* are not the reason their genera
+are feared — so the number of genuinely problematic cards is lower still. A
+broader genus list, counting genera that are hard in general even where the
+common species is not, gives 31; that the two counts differ this much is itself
+the point, since frequency selects the distinctive species *within* hard genera
+as well as avoiding the genera themselves.
+
+The consequence for M4: `answer_rank = "genus"` demotion is a safety net
+catching roughly seven to nine cards, not a primary filter the pack depends on.
+It should be built and tested, and it should not be given a difficulty model, a
+tuned threshold, or a curated genus list to maintain — the cost of that
+machinery would exceed the harm it prevents. If a later state's pool shows the
+hard-genus share climbing well above 3%, that assumption has broken and this
+entry should be revisited.
+
+### 2026-08-07 — Image bytes are transcoded and addressed by the hash of the output
+
+Status: Active
+
+Downloaded photos are decoded, resized to 500px on the longest edge, re-encoded
+as WebP at quality 75, and stored at `images/{sha[:2]}/{sha}.webp` where the hash
+is taken over the **transcoded** bytes, not the download.
+
+Hashing the output rather than the input is what makes cross-state dedupe work.
+Michigan, Ohio and Indiana share most of their flora; addressing by content means
+the second and third states find the milkweed photograph already present instead
+of storing three copies under three paths, with nothing to indicate they are the
+same picture. It also means the store is only meaningful relative to an encoder:
+change the resize, the quality, or the Pillow version and the same photo produces
+different bytes and a different address. So the encoder profile — including the
+exact Pillow version, patch included — is written into the store's marker file
+and recorded as a `SourceRef` on every resolved pool. A store opened under a
+different profile refuses to open rather than silently mixing two encoders'
+output, which would return different bytes for the same logical image depending
+on when each entry was written.
+
+The cost is that a Pillow upgrade invalidates the whole store and forces a
+re-transcode. That is the honest consequence of content-addressing derived bytes,
+and the alternative — hashing the download and treating the encoder as an
+implementation detail — would make the store's contents unverifiable against the
+records that point at them.
+
+### 2026-08-07 — All EXIF is stripped, and the reason is privacy rather than size
+
+Status: Active
+
+Transcoding discards every byte of source metadata. Not "GPS is removed and
+orientation is kept" — the image is decoded to raw pixels and pasted into a fresh
+buffer, so nothing from the source's `info` dictionary can reach the output.
+
+A JPEG's EXIF block can carry the GPS coordinates of the camera that took it,
+along with the device serial and the photographer's software. Sift redistributes
+these images to strangers. iNaturalist obscures coordinates for threatened taxa
+in its *API responses*, but that protection does not extend to metadata embedded
+in an image file, and an observer who marked an observation obscured has not
+thereby stripped their camera's EXIF. The failure mode of getting this wrong is
+publishing somebody's home address, so the safe design is the one with no list to
+maintain: keep nothing.
+
+Orientation is the one thing worth losing, and it is not lost — EXIF rotation is
+applied to the pixels before the metadata is discarded, so a photo that displayed
+upright still does. The cost is that colour-managed images lose their ICC profile
+and shift slightly; for 500px study photographs of plants that is not a trade
+worth a metadata allowlist.
+
+### 2026-08-07 — Photo URLs come from the API and are never rebuilt from a photo id
+
+Status: Active
+
+`PROJECTION_VERSION` went to 2 to carry `photos[].url`, and the URL is stored on
+each `CandidatePhoto`. The only rewriting Sift does is replacing the size segment
+— `square.jpg` becomes `medium.jpg` — which preserves the extension the API
+reported. A URL whose final segment is not `<stem>.<ext>` is refused rather than
+rewritten.
+
+Version 1 dropped the URL, reasoning that image bytes come from the open-data
+bucket keyed by photo id (2026-08-05). That was true and not sufficient: the id
+alone does not give a URL, because file extensions vary per photo, and a
+templated `.jpg` would 404 on every PNG. Those 404s are indistinguishable from
+photos genuinely deleted since the fetch, so the loss rate would be unknown and
+the loss itself silent — exactly the failure this project is organised against.
+
+`medium` is requested because it is 500px on its longest edge, the same as the
+transcode target: no pixels are downloaded that the encoder would immediately
+discard, and nothing is ever upscaled.
+
+The cost was a full re-fetch of Michigan's 1222 API responses, because raw bodies
+were not kept and a projection is not reversible. That is the standing price of
+projecting: a field dropped is a re-fetch if it turns out to be needed. It was
+still the right trade — the projected cache is 17 MB where the raw one was 1.5 GB
+— but the lesson is that `--keep-raw` is cheap insurance during a phase where the
+projection is still settling.
+
+### 2026-08-07 — Resolve is resumable per taxon, and a completed re-run is free
+
+Status: Active
+
+The resolve stage journals one line per taxon to
+`work/resolved_<STATE>.partial.jsonl`, flushed as each taxon completes, and the
+final pool is written atomically with the journal retired only after it lands. A
+killed run resumes from the journal; a crash between the two leaves both and the
+next run rebuilds from the journal. There is never a half-written pool.
+
+A *completed* run is also free to repeat, because the finished
+`resolved_<STATE>.json` is itself a ledger: a taxon is reused when every one of
+its candidate photos is accounted for in that pool, either stored or recorded as
+having failed. Anything less exact — a subset match, say — would silently serve a
+stale pack when the fetch stage picked different photos.
+
+Failures are sticky. A taxon that lost photos to 404s stays dropped across
+re-runs rather than being retried each time, because retrying makes a re-run cost
+2400 downloads and the common case is that a deleted photo stays deleted. To
+retry, delete `resolved_<STATE>.json` and resolve again. That is a stated
+contract rather than a guess about transience, and it is the one place where
+being resumable and being self-healing conflict; resumable wins because this
+stage is long enough that process death is the expected event.
+
+### 2026-08-07 — `sift-pack gc` is manual and dry-run by default
+
+Status: Active
+
+Garbage collection deletes stored images no `resolved_*.json` in `work/`
+references. It never runs as part of another command, and it reports without
+deleting unless `--no-dry-run` is passed.
+
+An unreferenced image is usually a pool that has not been rebuilt yet, not
+garbage — resolve a state, change a filter upstream, and every image is briefly
+unreferenced until the pool is rewritten. Automatic collection would make that
+window destructive. The asymmetry decides it: deleting an image wrongly costs a
+re-download, and deleting a store wrongly costs an afternoon of re-downloading
+and re-transcoding several gigabytes, so the default is the one that cannot lose
+an afternoon.

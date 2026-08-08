@@ -46,6 +46,8 @@ from tests.fixture_client import (
 )
 
 PLANTAE = "Plantae"
+_DIMS = {"width": 1, "height": 1}
+_URL = "https://inaturalist-open-data.s3.amazonaws.com/photos/1/square.jpg"
 
 
 def _seed(cache_dir: Path, endpoint: Endpoint, params: Params, response: dict[str, Any]) -> None:
@@ -265,6 +267,7 @@ def _observation(**overrides: Any) -> dict[str, Any]:  # noqa: ANN401 - builds d
                 "id": 900,
                 "license_code": "cc0",
                 "original_dimensions": {"width": 100, "height": 200},
+                "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/900/square.jpg",
             }
         ],
     }
@@ -295,13 +298,21 @@ def test_an_unusable_observation_contributes_no_photos(
 @pytest.mark.parametrize(
     "photo",
     [
-        {"id": 1, "license_code": "cc-by-nc", "original_dimensions": {"width": 1, "height": 1}},
-        {"id": 1, "license_code": None, "original_dimensions": {"width": 1, "height": 1}},
-        {"id": 1, "original_dimensions": {"width": 1, "height": 1}},
-        {"id": 1, "license_code": "cc0"},
-        {"id": 1, "license_code": "cc0", "original_dimensions": {"width": 0, "height": 1}},
-        {"id": 1, "license_code": "cc0", "original_dimensions": "wrong type"},
-        {"license_code": "cc0", "original_dimensions": {"width": 1, "height": 1}},
+        {"id": 1, "license_code": "cc-by-nc", "original_dimensions": _DIMS, "url": _URL},
+        {"id": 1, "license_code": None, "original_dimensions": _DIMS, "url": _URL},
+        {"id": 1, "original_dimensions": _DIMS, "url": _URL},
+        {"id": 1, "license_code": "cc0", "url": _URL},
+        {
+            "id": 1,
+            "license_code": "cc0",
+            "original_dimensions": {"width": 0, "height": 1},
+            "url": _URL,
+        },
+        {"id": 1, "license_code": "cc0", "original_dimensions": "wrong type", "url": _URL},
+        {"license_code": "cc0", "original_dimensions": _DIMS, "url": _URL},
+        # No URL at all: there is no route to the bytes, so the photo is unusable.
+        {"id": 1, "license_code": "cc0", "original_dimensions": _DIMS},
+        {"id": 1, "license_code": "cc0", "original_dimensions": _DIMS, "url": None},
     ],
 )
 def test_an_unusable_photo_is_skipped_not_repaired(tmp_path: Path, photo: dict[str, Any]) -> None:
@@ -325,6 +336,7 @@ def test_licence_codes_are_matched_case_insensitively(tmp_path: Path) -> None:
                     "id": n * 10,
                     "license_code": code,
                     "original_dimensions": {"width": 10, "height": 10},
+                    "url": f"https://h/photos/{n * 10}/square.jpg",
                 }
             ],
         )
@@ -364,6 +376,7 @@ def test_missing_agreement_count_is_recorded_as_zero_not_assumed(tmp_path: Path)
                     "id": n * 10,
                     "license_code": "cc0",
                     "original_dimensions": {"width": 10, "height": 10},
+                    "url": f"https://h/photos/{n * 10}/square.jpg",
                 }
             ],
         )
@@ -393,6 +406,7 @@ def test_a_photographer_without_a_display_name_is_left_absent(tmp_path: Path) ->
                     "id": n * 10,
                     "license_code": "cc0",
                     "original_dimensions": {"width": 10, "height": 10},
+                    "url": f"https://h/photos/{n * 10}/square.jpg",
                 }
             ],
         )

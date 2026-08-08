@@ -85,7 +85,7 @@ def test_projection_drops_fields_no_parser_reads(unread: str) -> None:
 
 def test_projection_drops_unread_photo_fields() -> None:
     photo = project("observations", {"results": [FAT_OBSERVATION]})["results"][0]["photos"][0]
-    assert set(photo) == {"id", "license_code", "original_dimensions"}
+    assert set(photo) == {"id", "license_code", "original_dimensions", "url"}
 
 
 def test_projection_preserves_record_counts() -> None:
@@ -122,7 +122,7 @@ def test_an_unprojected_endpoint_raises_rather_than_passing_through() -> None:
 def test_projection_shrinks_the_payload() -> None:
     fat = len(json.dumps({"results": [FAT_OBSERVATION]}))
     thin = len(json.dumps(project("observations", {"results": [FAT_OBSERVATION]})))
-    assert thin < fat / 2
+    assert thin < fat * 0.6
 
 
 # --- the cache stores projections ---------------------------------------------

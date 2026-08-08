@@ -35,10 +35,8 @@ from sift_pack.inat.deck import (
 from sift_pack.inat.photos import (
     MONTH_BUCKETS,
     PERMITTED_LICENSES,
-    PREFERRED_MIN_AGREEMENTS,
     PhotoSelection,
     distinct_observers,
-    minimum_agreement,
     months_represented,
     select_photos,
 )
@@ -199,14 +197,24 @@ def test_bucket_yields_are_recorded() -> None:
     assert sum(yields.values()) > 0
 
 
-def test_well_confirmed_observations_are_preferred_within_a_bucket() -> None:
+def test_within_a_bucket_photos_are_taken_in_observation_id_order() -> None:
+    # The only ordering selection applies below seasonal spread. It claims
+    # nothing; it exists so the same cache yields the same pack.
     selection = _selection()
     by_bucket: dict[str, list[int]] = {}
     for photo in selection.photos:
-        by_bucket.setdefault(photo.month_bucket, []).append(photo.identification_agreements)
-    for agreements in by_bucket.values():
-        preferred = [a >= PREFERRED_MIN_AGREEMENTS for a in agreements]
-        assert preferred == sorted(preferred, reverse=True)
+        by_bucket.setdefault(photo.month_bucket, []).append(photo.observation_id)
+    for observation_ids in by_bucket.values():
+        assert observation_ids == sorted(observation_ids)
+
+
+def test_selection_does_not_rank_on_agreements() -> None:
+    # If agreements still influenced order, the selected photos would skew
+    # toward high counts relative to what the buckets offered. They must not.
+    selection = _selection()
+    assert selection.drop is None
+    chosen = [photo.identification_agreements for photo in selection.photos]
+    assert min(chosen) <= 1 or len(set(chosen)) > 1
 
 
 def test_every_photo_carries_attribution_and_a_bucket() -> None:
@@ -222,10 +230,9 @@ def test_quality_signals_are_computed_from_the_photos() -> None:
     photos = _selection().photos
     assert months_represented(photos) == len({p.month_bucket for p in photos})
     assert distinct_observers(photos) == len({p.photographer_login for p in photos})
-    assert minimum_agreement(photos) == min(p.identification_agreements for p in photos)
 
 
-@pytest.mark.parametrize("measure", [months_represented, distinct_observers, minimum_agreement])
+@pytest.mark.parametrize("measure", [months_represented, distinct_observers])
 def test_quality_signals_refuse_an_empty_list(
     measure: Callable[[list[CandidatePhoto]], int],
 ) -> None:

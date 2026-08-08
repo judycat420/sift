@@ -32,11 +32,19 @@ from typing import Any
 
 __all__ = ["PROJECTION_VERSION", "project"]
 
-PROJECTION_VERSION = 1
+PROJECTION_VERSION = 2
 """Bump when any projection below changes shape.
 
 Included in the cache key, so a bump partitions the cache rather than
 corrupting it. Entries at older versions become unreachable and prunable.
+
+Version 2 adds `photos[].url`. Version 1 dropped it on the reasoning that image
+bytes come from the open-data bucket keyed by photo id — true, but the id alone
+does not give a URL, because file extensions vary per photo and templating one
+would 404 silently on an unknown fraction. The URL the API hands us is the only
+non-guessing way to reach the bytes. Since raw bodies were not kept, that cost a
+full re-fetch: a projection that drops a field is a decision to re-fetch if it
+turns out to be needed.
 """
 
 
@@ -49,15 +57,17 @@ def _dimensions(photo: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _project_photo(photo: dict[str, Any]) -> dict[str, Any]:
-    """Photo id, licence and original size.
+    """Photo id, licence, original size, and the URL its bytes live at.
 
-    The `url` is deliberately not carried: image bytes come from the open-data
-    bucket keyed by photo id, never from an API URL.
+    The URL is carried verbatim. It is the only non-guessing route to the image
+    bytes: extensions vary per photo, so rebuilding a URL from the photo id
+    would 404 on an unknown fraction and lose that data silently.
     """
     return {
         "id": photo.get("id"),
         "license_code": photo.get("license_code"),
         "original_dimensions": _dimensions(photo),
+        "url": photo.get("url"),
     }
 
 

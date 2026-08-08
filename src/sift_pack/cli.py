@@ -24,22 +24,29 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
 
 from sift_pack.candidates import CandidatePool
 from sift_pack.domains import TaxonDomain
 from sift_pack.domains.registry import UnknownDomainError, resolve_domain
+from sift_pack.download import DEFAULT_CONCURRENCY, HttpxDownloader
 from sift_pack.fetch import fetch_pool
+from sift_pack.imagestore import ImageStore, StoreError
 from sift_pack.inat.client import InatClient, InatError
 from sift_pack.inat.places import PLACES_PATH, load_places, refresh_places
 from sift_pack.lock import FetchLockError, fetch_lock
-from sift_pack.stats import summarise
+from sift_pack.resolve import commit, referenced_digests, resolve_pool, resolved_path
+from sift_pack.resolved import ResolvedPool
+from sift_pack.stats import human_bytes, summarise, summarise_resolved
+from sift_pack.transcode import current_profile
 
-__all__ = ["app", "build", "fetch", "main", "places", "stats"]
+__all__ = ["app", "build", "fetch", "gc", "main", "places", "resolve", "stats"]
 
 _log = logging.getLogger("sift_pack")
 
 DEFAULT_CACHE_DIR = Path("cache")
 DEFAULT_WORK_DIR = Path("work")
+DEFAULT_STORE_DIR = Path("images")
 
 _EXIT_UNKNOWN_DOMAIN = 2
 _EXIT_DOMAIN_UNAVAILABLE = 3
@@ -47,6 +54,8 @@ _EXIT_NOT_YET_IMPLEMENTED = 4
 _EXIT_INAT_ERROR = 5
 _EXIT_MISSING_POOL = 6
 _EXIT_LOCKED = 7
+_EXIT_STALE_POOL = 8
+_EXIT_STORE_ERROR = 9
 
 DEFAULT_LIMIT = 300
 """Candidates a fetch aims for.
@@ -74,6 +83,53 @@ def pool_path(state: str, work_dir: Path = DEFAULT_WORK_DIR) -> Path:
         'work/candidates_MI.json'
     """
     return work_dir / f"candidates_{state.upper()}.json"
+
+
+def _load_pool(source: Path) -> CandidatePool:
+    """Read a candidate pool, or exit with a message a human can act on.
+
+    A pool written by an older build fails `extra="forbid"` — which is the point,
+    since silently ignoring a dropped field would hand back a pool whose
+    provenance differs from what this build would produce. But a raw pydantic
+    traceback does not tell anyone what to do about it, so the failure is
+    translated into the one thing that fixes it.
+
+    Args:
+        source: Path to the pool.
+
+    Returns:
+        The parsed pool.
+
+    Raises:
+        typer.Exit: 6 if absent, 8 if it was written under a different schema.
+
+    Example:
+        >>> _load_pool(Path("nope/candidates_ZZ.json"))
+        Traceback (most recent call last):
+            ...
+        click.exceptions.Exit: 6
+    """
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError as exc:
+        typer.echo(
+            f"error: no candidate pool at {source}. Run `sift-pack fetch --domain "
+            "plants --state <STATE>` first.",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_MISSING_POOL) from exc
+
+    try:
+        return CandidatePool.model_validate_json(text)
+    except ValidationError as exc:
+        typer.echo(
+            f"error: {source} does not match this build's candidate schema — it was "
+            "almost certainly written by an earlier version of Sift. Re-run "
+            "`sift-pack fetch` to regenerate it; every response it needs is already "
+            f"cached, so it costs nothing.\n\n{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_STALE_POOL) from exc
 
 
 def _configure_logging(verbose: bool) -> None:
@@ -220,16 +276,23 @@ def stats(
     state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
     work_dir: Annotated[Path, typer.Option(help="Where the pool lives.")] = DEFAULT_WORK_DIR,
     cache_dir: Annotated[Path, typer.Option(help="Cache to measure.")] = DEFAULT_CACHE_DIR,
+    store_dir: Annotated[Path, typer.Option(help="Image store to measure.")] = DEFAULT_STORE_DIR,
+    resolved: Annotated[
+        bool, typer.Option("--resolved", help="Describe the resolved pool instead.")
+    ] = False,
 ) -> None:
-    """Summarise a fetched candidate pool.
+    """Summarise a fetched candidate pool, or a resolved one.
 
     Args:
         state: Which state's pool to describe.
         work_dir: Directory holding the pool.
         cache_dir: Response cache, measured for the on-disk size line.
+        store_dir: Image store, measured when describing a resolved pool.
+        resolved: Describe `resolved_<STATE>.json` rather than the candidates.
 
     Raises:
-        typer.Exit: 6 when no pool has been fetched for that state.
+        typer.Exit: 6 when no pool has been fetched for that state, 8 when the
+            pool on disk predates this build's schema.
 
     Example:
         >>> from typer.testing import CliRunner
@@ -237,18 +300,24 @@ def stats(
         >>> result.exit_code
         6
     """
-    source = pool_path(state, work_dir)
-    try:
-        text = source.read_text(encoding="utf-8")
-    except OSError as exc:
-        typer.echo(
-            f"error: no candidate pool at {source}. Run `sift-pack fetch --domain "
-            f"plants --state {state}` first.",
-            err=True,
-        )
-        raise typer.Exit(code=_EXIT_MISSING_POOL) from exc
+    if resolved:
+        source = resolved_path(state, work_dir)
+        try:
+            text = source.read_text(encoding="utf-8")
+        except OSError as exc:
+            typer.echo(
+                f"error: no resolved pool at {source}. Run `sift-pack resolve --state "
+                f"{state}` first.",
+                err=True,
+            )
+            raise typer.Exit(code=_EXIT_MISSING_POOL) from exc
+        resolved_pool = ResolvedPool.model_validate_json(text)
+        typer.echo(f"pool: {source} ({resolved_pool.domain}, {resolved_pool.state})", err=True)
+        typer.echo(summarise_resolved(resolved_pool, store_dir).render())
+        return
 
-    pool = CandidatePool.model_validate_json(text)
+    source = pool_path(state, work_dir)
+    pool = _load_pool(source)
     typer.echo(f"pool: {source} ({pool.domain}, {pool.state}, place_id {pool.place_id})", err=True)
     typer.echo(summarise(pool, cache_dir).render())
 
@@ -295,6 +364,111 @@ def places(
 
 
 @app.command()
+def resolve(
+    state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
+    work_dir: Annotated[Path, typer.Option(help="Where pools live.")] = DEFAULT_WORK_DIR,
+    store_dir: Annotated[Path, typer.Option(help="Content-addressed image store.")] = (
+        DEFAULT_STORE_DIR
+    ),
+    concurrency: Annotated[
+        int, typer.Option(min=1, max=32, help="Simultaneous downloads.")
+    ] = DEFAULT_CONCURRENCY,
+    force: Annotated[bool, typer.Option(help="Break a stale lock.")] = False,
+) -> None:
+    """Download, transcode and store every candidate photo for a state.
+
+    Resumable: progress is journalled per taxon, so a killed run continues where
+    it stopped rather than re-downloading. Holds the same lock as `fetch`, since
+    running two at once would double our load on the open-data bucket.
+
+    Args:
+        state: Which state's candidate pool to resolve.
+        work_dir: Where pools and the resume journal live.
+        store_dir: Content-addressed image store.
+        concurrency: Simultaneous downloads.
+        force: Break a stale lock left by a killed process.
+
+    Raises:
+        typer.Exit: 6 with no candidate pool, 7 when another run holds the lock,
+            8 for a stale pool, 9 when the store was written by another encoder.
+
+    Example:
+        >>> from typer.testing import CliRunner
+        >>> CliRunner().invoke(app, ["resolve", "--state", "ZZ"]).exit_code
+        6
+    """
+    # Always verbose: this runs for minutes and a silent long job is one nobody
+    # can tell apart from a hung one. Diagnostics go to stderr regardless.
+    _configure_logging(verbose=True)
+    pool = _load_pool(pool_path(state, work_dir))
+
+    try:
+        with fetch_lock(work_dir, force=force):
+            store = ImageStore(store_dir, current_profile())
+            resolved, stats = resolve_pool(pool, HttpxDownloader(), store, work_dir, concurrency)
+            destination = commit(resolved, work_dir)
+    except FetchLockError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=_EXIT_LOCKED) from exc
+    except StoreError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=_EXIT_STORE_ERROR) from exc
+
+    typer.echo(f"wrote {destination}", err=True)
+    typer.echo(
+        f"{len(resolved.taxa)} taxa resolved, "
+        f"{len(resolved.resolve_dropped)} photo/taxon losses, {stats.summary()}",
+        err=True,
+    )
+
+
+@app.command()
+def gc(
+    work_dir: Annotated[Path, typer.Option(help="Where pools live.")] = DEFAULT_WORK_DIR,
+    store_dir: Annotated[Path, typer.Option(help="Store to collect.")] = DEFAULT_STORE_DIR,
+    dry_run: Annotated[bool, typer.Option(help="Report what would go, delete nothing.")] = True,
+) -> None:
+    """Delete stored images no resolved pool references.
+
+    Never runs automatically and defaults to a dry run. An unreferenced image is
+    usually a pool that has not been rebuilt yet rather than garbage, and the
+    cost of deleting one wrongly is a re-download; the cost of deleting a whole
+    store wrongly is an afternoon.
+
+    Args:
+        work_dir: Directory scanned for `resolved_*.json` pools.
+        store_dir: Store to collect.
+        dry_run: When true (the default), report and delete nothing.
+
+    Raises:
+        typer.Exit: 9 if the store cannot be opened.
+
+    Example:
+        >>> from typer.testing import CliRunner
+        >>> CliRunner().invoke(app, ["gc", "--store-dir", "nope"]).exit_code
+        0
+    """
+    try:
+        store = ImageStore(store_dir, current_profile())
+    except StoreError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=_EXIT_STORE_ERROR) from exc
+
+    referenced = set(referenced_digests(work_dir))
+    unreferenced = [digest for digest in store.digests() if digest not in referenced]
+    typer.echo(
+        f"{len(referenced)} digests referenced by pools in {work_dir}; "
+        f"{len(unreferenced)} unreferenced in {store_dir}",
+        err=True,
+    )
+    if dry_run:
+        typer.echo("dry run: nothing deleted. Re-run with --no-dry-run to collect.", err=True)
+        return
+    removed, freed = store.collect(referenced)
+    typer.echo(f"removed {removed} images, freed {human_bytes(freed)}", err=True)
+
+
+@app.command()
 def build(
     state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
     work_dir: Annotated[Path, typer.Option(help="Where the pool lives.")] = DEFAULT_WORK_DIR,
@@ -311,7 +485,8 @@ def build(
         work_dir: Directory holding the pool.
 
     Raises:
-        typer.Exit: 4 always, until M3. 6 when there is no pool to promote.
+        typer.Exit: 4 always, until M3. 6 when there is no pool to promote, 8
+            when the pool on disk predates this build's schema.
 
     Example:
         >>> from typer.testing import CliRunner
@@ -319,14 +494,7 @@ def build(
         6
     """
     source = pool_path(state, work_dir)
-    if not source.exists():
-        typer.echo(
-            f"error: no candidate pool at {source}. Run `sift-pack fetch` first.",
-            err=True,
-        )
-        raise typer.Exit(code=_EXIT_MISSING_POOL)
-
-    pool = CandidatePool.model_validate_json(source.read_text(encoding="utf-8"))
+    pool = _load_pool(source)
     typer.echo(
         f"error: cannot build a manifest yet. {source} holds {len(pool.candidates)} "
         "candidates, but promotion requires two things M2 does not have:\n"

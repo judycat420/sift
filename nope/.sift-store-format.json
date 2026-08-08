@@ -1,0 +1,9 @@
+{
+ "format": "sift-image-store",
+ "profile": {
+  "max_edge": 500,
+  "quality": 75,
+  "image_format": "WEBP",
+  "pillow_version": "12.3.0"
+ }
+}

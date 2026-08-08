@@ -37,7 +37,6 @@ from sift_pack.inat.deck import fetch_taxon_details, select_taxa
 from sift_pack.inat.photos import (
     MONTH_BUCKETS,
     distinct_observers,
-    minimum_agreement,
     months_represented,
     select_photos,
 )
@@ -127,7 +126,6 @@ def fetch_pool(
                 genus=detail.genus,
                 family=detail.family,
                 obs_count=summary.obs_count,
-                min_identification_agreement=minimum_agreement(photos),
                 months_represented=months_represented(photos),
                 distinct_observers=distinct_observers(photos),
                 images=photos,

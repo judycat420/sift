@@ -21,10 +21,14 @@ INVARIANT PROTECTED
 -------------------
 No photo enters a candidate unless its licence is permitted, its observation has
 not already contributed, and its observer is under the per-taxon cap. Selection
-maximises seasonal spread first and identification confidence second, in that
-order, and a taxon that cannot reach four photos under all of those rules is
-dropped — the rules are never relaxed to reach the floor, because a taxon padded
-back to four is exactly the unspread sample this module exists to avoid.
+maximises seasonal spread; beyond that it makes no quality judgement at all,
+because iNaturalist exposes no per-observation quality signal that survives
+inspection (`docs/decisions.md`, 2026-08-07). Within a bucket, observations are
+taken in ascending ID order — a tiebreak that claims nothing and is reproducible.
+
+A taxon that cannot reach four photos under all of those rules is dropped; the
+rules are never relaxed to reach the floor, because a taxon padded back to four
+is exactly the unspread sample this module exists to avoid.
 
 An empty bucket is not an error. A spring ephemeral has no October records, and
 a fetch that treated that as a failure would drop precisely the plants whose
@@ -52,11 +56,9 @@ __all__ = [
     "MONTH_BUCKETS",
     "OBSERVATIONS_PER_BUCKET",
     "PERMITTED_LICENSES",
-    "PREFERRED_MIN_AGREEMENTS",
     "MonthBucket",
     "PhotoSelection",
     "distinct_observers",
-    "minimum_agreement",
     "months_represented",
     "observations_query",
     "select_photos",
@@ -108,18 +110,6 @@ Responses report these lowercase; the request parameter wants them uppercase.
 
 _API_LICENSE_PARAM: tuple[str, ...] = ("CC0", "CC-BY", "CC-BY-SA")
 
-PREFERRED_MIN_AGREEMENTS = 2
-"""Observations with at least this many agreeing IDs are selected first.
-
-Ranked below seasonal spread on purpose. A well-confirmed photo of a plant in
-flower and a thinly-confirmed one of the same plant in fruit are not
-interchangeable: the second teaches something the first cannot, and dropping it
-for a third flowering photo would trade a real gap for a marginal gain in
-confidence. Not a hard filter either — requiring two agreements would exclude
-uncommon taxa whose records are simply under-reviewed. The floor that actually
-held is recorded on the candidate, so the compromise stays visible.
-"""
-
 
 @dataclass(frozen=True, slots=True)
 class PhotoSelection:
@@ -147,10 +137,22 @@ class _Selectable:
     agreements: int
     bucket: str
 
-    def rank(self) -> tuple[int, int, int]:
-        """Sort key within a bucket: confirmed first, then most agreed, then stable."""
-        preferred = 0 if self.agreements >= PREFERRED_MIN_AGREEMENTS else 1
-        return (preferred, -self.agreements, self.photo.observation_id)
+    def rank(self) -> int:
+        """Sort key within a bucket: observation ID ascending.
+
+        Deliberately claimless. Sift previously ordered by agreeing-ID count,
+        which looked like ranking by confidence and was not: iNaturalist's
+        `num_identification_agreements` counts agreements with the observer's
+        own identification, and research grade needs only two identifications
+        in total, so the number reports whether an observation drew an extra
+        identifier — which tracks being photogenic or contentious, not being
+        right (`docs/decisions.md`, 2026-08-07).
+
+        Ordering by ID asserts nothing about the observations it orders. It
+        exists only to make selection reproducible, which the round-robin across
+        buckets and the per-observer cap already do most of the work for.
+        """
+        return self.photo.observation_id
 
 
 def _license_of(photo: object) -> License | None:
@@ -201,7 +203,12 @@ def _photo_from(photo: dict[str, object], context: _ObservationContext) -> Candi
     license_code = _license_of(photo)
     photo_id = photo.get("id")
     dims = _dimensions(photo)
+    url = photo.get("url")
     if license_code is None or not isinstance(photo_id, int) or dims is None:
+        return None
+    if not isinstance(url, str) or not url:
+        # No URL means no route to the bytes. Dropping here beats carrying a
+        # candidate the resolve stage would have to reject anyway.
         return None
     try:
         return CandidatePhoto(
@@ -216,6 +223,7 @@ def _photo_from(photo: dict[str, object], context: _ObservationContext) -> Candi
             height=dims[1],
             identification_agreements=context.agreements,
             month_bucket=context.bucket,
+            source_url=url,
         )
     except ValidationError:
         return None
@@ -297,12 +305,16 @@ def _selectable_from(entry: object, taxon_id: int, bucket: str) -> _Selectable |
 def _choose(pooled: dict[str, list[_Selectable]]) -> list[CandidatePhoto]:
     """Pick up to eight photos, maximising seasonal spread then confidence.
 
-    Round-robins across buckets: every bucket contributes its best candidate
-    before any bucket contributes a second. That makes rule (c) — maximise
-    distinct month-buckets — a property of the traversal order rather than
-    something checked afterwards, so no later rule can trade it away. The
-    per-observer cap (rule b) is applied as candidates are taken, so an observer
-    who dominates one bucket cannot consume another bucket's slot.
+    Round-robins across buckets: every bucket contributes one candidate before
+    any bucket contributes a second. That makes maximising distinct month-buckets
+    a property of the traversal order rather than something checked afterwards,
+    so no later rule can trade it away. The per-observer cap is applied as
+    candidates are taken, so an observer who dominates one bucket cannot consume
+    another bucket's slot.
+
+    Within a bucket the order is by observation ID, which is arbitrary but fixed.
+    Selection makes no quality judgement beyond seasonal spread and the observer
+    cap: there is no per-observation signal worth ranking on.
     """
     queues = {
         bucket.label: sorted(pooled.get(bucket.label, []), key=_Selectable.rank)
@@ -370,7 +382,8 @@ def select_photos(
     """Choose up to eight photos for a taxon, spread across seasons and observers.
 
     Makes one request per seasonal bucket. Buckets that return nothing are
-    normal, and are recorded rather than treated as failures.
+    normal, and are recorded rather than treated as failures. Within a bucket,
+    observations are taken in ascending ID order; no quality ranking is applied.
 
     Args:
         client: Cached iNaturalist client.
@@ -498,32 +511,3 @@ def distinct_observers(photos: list[CandidatePhoto]) -> int:
         message = "distinct_observers requires at least one photo"
         raise ValueError(message)
     return len({photo.photographer_login for photo in photos})
-
-
-def minimum_agreement(photos: list[CandidatePhoto]) -> int:
-    """Lowest agreeing-ID count among the selected photos.
-
-    The floor rather than the mean: one heavily-confirmed observation should not
-    make a taxon look better-identified than its weakest included photo. A
-    learner-facing quality signal (M7).
-
-    Args:
-        photos: The selected photos. Must not be empty.
-
-    Returns:
-        The minimum `identification_agreements` across them.
-
-    Raises:
-        ValueError: If `photos` is empty — there is no honest answer for a taxon
-            with no photos, and returning 0 would look like a real measurement.
-
-    Example:
-        >>> minimum_agreement([])
-        Traceback (most recent call last):
-            ...
-        ValueError: ...
-    """
-    if not photos:
-        message = "minimum_agreement requires at least one photo"
-        raise ValueError(message)
-    return min(photo.identification_agreements for photo in photos)

@@ -34,7 +34,6 @@ def _taxon(
         genus="Genus",
         family="Familia",
         obs_count=obs_count,
-        min_identification_agreement=agreement,
         months_represented=len({image.month_bucket for image in images}),
         distinct_observers=len({image.photographer_login for image in images}),
         images=images,
@@ -66,7 +65,6 @@ def test_empty_pool_reports_absent_distributions_not_zero() -> None:
     assert stats.kept == 0
     assert stats.obs_count.median is None
     assert stats.obs_count.p10 is None
-    assert stats.agreement.median is None
     assert stats.months.median is None
     assert stats.observers.median is None
     assert "n/a" in stats.render()
@@ -107,7 +105,6 @@ def test_distributions_are_computed_over_candidates() -> None:
     )
     assert stats.obs_count.median == 125
     assert stats.obs_count.p10 == 50
-    assert stats.agreement.median == 2
 
 
 def test_every_drop_reason_appears_even_when_unused() -> None:

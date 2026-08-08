@@ -43,7 +43,6 @@ def _write_pool(work_dir: Path, state: str = "MI") -> Path:
                 genus="Asclepias",
                 family="Apocynaceae",
                 obs_count=9108,
-                min_identification_agreement=2,
                 months_represented=1,
                 distinct_observers=5,
                 images=[_photo(n, 47911, photographer_login=f"a{n}") for n in range(1, 6)],
@@ -56,7 +55,6 @@ def _write_pool(work_dir: Path, state: str = "MI") -> Path:
                 genus="Pinus",
                 family="Pinaceae",
                 obs_count=6426,
-                min_identification_agreement=2,
                 months_represented=1,
                 distinct_observers=7,
                 images=[_photo(n, 52391, photographer_login=f"b{n}") for n in range(10, 17)],
@@ -106,7 +104,6 @@ def test_stats_reports_kept_dropped_licences_and_distributions(tmp_path: Path) -
     assert "distributions:" in out
     assert "months_represented" in out
     assert "distinct_observers" in out
-    assert "min_identification_agmt" in out
     assert "month buckets:" in out
     assert "cache on disk:" in out
 
