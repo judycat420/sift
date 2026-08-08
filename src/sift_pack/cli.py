@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -34,11 +35,13 @@ from sift_pack.download import HttpxDownloader
 from sift_pack.fetch import fetch_pool
 from sift_pack.imagestore import ImageStore, StoreError
 from sift_pack.inat.client import InatClient, InatError
-from sift_pack.inat.places import PLACES_PATH, load_places, refresh_places
+from sift_pack.inat.nativity import fetch_establishment
+from sift_pack.inat.places import PLACES_PATH, STATE_NAMES, load_places, refresh_places
 from sift_pack.lock import FetchLockError, fetch_lock
 from sift_pack.manifest import Manifest
+from sift_pack.nativity import decide_pool
 from sift_pack.promote import (
-    load_demotions,
+    PromotionPolicy,
     manifest_path,
     promote,
     report_path,
@@ -57,7 +60,7 @@ from sift_pack.resolved import ResolvedPool
 from sift_pack.stats import human_bytes, summarise, summarise_manifest, summarise_resolved
 from sift_pack.transcode import current_profile
 from sift_pack.usda.client import PlantsClient
-from sift_pack.usda.index import DEFAULT_USDA_CACHE, build_nativity_index
+from sift_pack.usda.index import USDA_CACHE_SUBDIR, reconcile_pool
 
 __all__ = [
     "app",
@@ -533,24 +536,34 @@ def promote_pack(
     packs_dir: Annotated[Path, typer.Option(help="Where manifests are written.")] = (
         DEFAULT_PACKS_DIR
     ),
-    cache_dir: Annotated[Path, typer.Option(help="PLANTS response cache.")] = DEFAULT_USDA_CACHE,
-    offline: Annotated[bool, typer.Option(help="Fail on a PLANTS cache miss.")] = False,
+    cache_dir: Annotated[
+        Path, typer.Option(help="Response-cache root; PLANTS lives in its 'usda' subdirectory.")
+    ] = DEFAULT_CACHE_DIR,
+    offline: Annotated[bool, typer.Option(help="Fail on a cache miss.")] = False,
 ) -> None:
-    """Promote a resolved pool into a manifest, using USDA PLANTS for nativity.
+    """Promote a resolved pool into a manifest, claiming nativity only on agreement.
 
     This is the terminal step and the only one that can produce a nativity
-    claim. Taxa PLANTS cannot resolve unambiguously are dropped and written to
-    `work/unmatched_<STATE>.csv` with a reason.
+    claim. Two sources are consulted — USDA PLANTS for the lower 48 and the
+    state's iNaturalist place checklist — and a claim is made only where they
+    agree, or where exactly one of them has an answer. Where they disagree the
+    taxon is dropped as `source_conflict`, because a disagreement between the
+    two is a signal about the taxon rather than noise to break with a tiebreak.
+
+    Every dropped taxon is written to `work/unmatched_<STATE>.csv` with a reason.
 
     Args:
         state: Which state's resolved pool to promote.
         work_dir: Where the resolved pool and unmatched report live.
         packs_dir: Where the finished manifest is written.
-        cache_dir: PLANTS response cache.
-        offline: Fail on a cache miss rather than querying PLANTS.
+        cache_dir: Response-cache root. The iNaturalist client reads it
+            directly; the PLANTS client reads its `usda` subdirectory, which is
+            where both have always been written.
+        offline: Fail on a cache miss rather than querying either source.
 
     Raises:
-        typer.Exit: 6 with no resolved pool, 10 when nothing could be promoted.
+        typer.Exit: 6 with no resolved pool, 5 on an iNaturalist failure, 10
+            when nothing could be promoted.
 
     Example:
         >>> from typer.testing import CliRunner
@@ -569,12 +582,30 @@ def promote_pack(
         raise typer.Exit(code=_EXIT_MISSING_POOL) from exc
     pool = ResolvedPool.model_validate_json(text)
 
-    client = PlantsClient(cache_dir, offline=offline)
-    index, reasons, tiers = build_nativity_index(client, pool)
+    client = PlantsClient(cache_dir / USDA_CACHE_SUBDIR, offline=offline)
+    reconciliations, tiers = reconcile_pool(client, pool)
+
+    inat_client = InatClient(cache_dir, offline=offline)
+    place_name = STATE_NAMES.get(state.upper(), state.upper())
+    read_at = datetime.now(UTC)
+    try:
+        establishment = fetch_establishment(
+            inat_client, [t.inat_taxon_id for t in pool.taxa], pool.place_id
+        )
+    except InatError as exc:
+        typer.echo(f"error: could not read the {place_name} checklist: {exc}", err=True)
+        raise typer.Exit(code=_EXIT_INAT_ERROR) from exc
+
+    index, reasons, nativity = decide_pool(reconciliations, establishment, read_at, place_name)
     manifest, report = promote(
-        pool, PlantsDomain(index), load_demotions(), pool.fetched_at.date(), reasons
+        pool,
+        PlantsDomain(index),
+        PromotionPolicy.load(),
+        pool.fetched_at.date(),
+        reasons,
     )
     report.by_tier = tiers
+    report.nativity = nativity
     written = write_unmatched(report, state, work_dir)
     recorded = write_report(report, state, work_dir)
 
@@ -594,7 +625,9 @@ def promote_pack(
     typer.echo(f"wrote {destination}", err=True)
     typer.echo(f"unmatched report: {written}", err=True)
     typer.echo(f"promotion report: {recorded}", err=True)
-    typer.echo(f"{report.summary()}, {client.stats.summary()}", err=True)
+    typer.echo(f"nativity: {nativity.summary()}", err=True)
+    typer.echo(f"{report.summary()}, PLANTS {client.stats.summary()}", err=True)
+    typer.echo(f"iNaturalist {inat_client.stats.summary()}", err=True)
 
 
 @app.command()

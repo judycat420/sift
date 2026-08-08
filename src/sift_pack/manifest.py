@@ -39,6 +39,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 __all__ = [
+    "PACK_VERSION",
     "AnswerRank",
     "Confidence",
     "Image",
@@ -48,6 +49,22 @@ __all__ = [
     "SourceRef",
     "Taxon",
 ]
+
+PACK_VERSION = 2
+"""Schema version of the manifests this build reads and writes.
+
+Version 2 replaces `Taxon.axis1_source: str` with `axis1_sources:
+list[SourceRef]`, because a claim can now rest on more than one dataset and the
+runtime must be able to show which — "USDA PLANTS and iNaturalist both say
+native" is a materially stronger statement than either alone, and a single
+string has nowhere to put the difference. See `docs/decisions.md`, 2026-08-08,
+"Nativity is claimed only where two independent sources agree".
+
+A version-1 manifest does not parse. That is the intended behaviour and not a
+migration gap: its taxa carry a bare source name with no version and no
+retrieval date per source, so upgrading one in place would mean inventing the
+provenance that version 2 exists to require.
+"""
 
 License = Literal["cc0", "cc-by", "cc-by-sa"]
 """Licences a pack may contain.
@@ -182,6 +199,13 @@ class Taxon(_Frozen):
     """One taxon in a pack, with its axis-1 claim and its images.
 
     Example:
+        >>> from datetime import UTC, datetime
+        >>> usda = SourceRef(
+        ...     name="USDA PLANTS",
+        ...     version="2026-08-08",
+        ...     retrieved_at=datetime(2026, 8, 8, tzinfo=UTC),
+        ...     url="https://plantsservices.sc.egov.usda.gov/api/",
+        ... )
         >>> taxon = Taxon(
         ...     inat_taxon_id=48662,
         ...     scientific_name="Asclepias tuberosa",
@@ -191,13 +215,13 @@ class Taxon(_Frozen):
         ...     family="Apocynaceae",
         ...     obs_count=12345,
         ...     axis1_value="native",
-        ...     axis1_source="USDA PLANTS",
+        ...     axis1_sources=[usda],
         ...     axis1_confidence="high",
         ...     answer_rank="species",
         ...     image_hashes=["0" * 64, "1" * 64, "2" * 64, "3" * 64],
         ... )
-        >>> taxon.axis1_source
-        'USDA PLANTS'
+        >>> [source.name for source in taxon.axis1_sources]
+        ['USDA PLANTS']
     """
 
     inat_taxon_id: int = Field(
@@ -224,16 +248,24 @@ class Taxon(_Frozen):
         min_length=1,
         description="The domain's axis-1 claim, e.g. 'native'. Meaning is domain-specific.",
     )
-    axis1_source: str = Field(
+    axis1_sources: list[SourceRef] = Field(
         min_length=1,
         description=(
-            "Which dataset asserted `axis1_value`. Required, no default: an "
+            "Every dataset that asserted `axis1_value`, each with its own version "
+            "and retrieval time. Required and non-empty, no default: an "
             "unattributed claim is the exact failure this schema exists to "
-            "prevent (STANDARDS.md rule 4)."
+            "prevent (STANDARDS.md rule 4). Two entries mean two independent "
+            "sources agreed; one means only one had an answer, and the "
+            "confidence is `medium` to say so."
         ),
     )
     axis1_confidence: Confidence = Field(
-        description="Confidence in `axis1_value`. Cannot be 'low' — those are dropped upstream."
+        description=(
+            "Confidence in `axis1_value`. Cannot be 'low' — those are dropped upstream. "
+            "`high` is reserved for a claim two sources agreed on; a single-source "
+            "claim is at most `medium` (STANDARDS.md rule 4: an aggregate is never "
+            "more confident than its weakest input)."
+        )
     )
     answer_rank: AnswerRank = Field(
         description="Whether the card may ask for species, or must stop at genus."
@@ -284,13 +316,17 @@ class Manifest(_Frozen):
         ...     images=[],
         ... )
         >>> manifest.pack_version
-        1
+        2
     """
 
     pack_version: int = Field(
-        default=1,
+        default=PACK_VERSION,
         ge=1,
-        description="Schema version. Bump on any change to this module's shapes.",
+        description=(
+            "Schema version. Bump on any change to this module's shapes. Checked "
+            "on parse: this build reads exactly its own version, because a pack "
+            "written to a different shape is not something to interpret leniently."
+        ),
     )
     domain: str = Field(min_length=1, description="Domain slug, e.g. 'plants'.")
     state: str = Field(min_length=1, description="Region the pack was built for, e.g. 'MI'.")
@@ -313,6 +349,26 @@ class Manifest(_Frozen):
         description="Taxa in the pack. May be empty — an empty deck beats a wrong one."
     )
     images: list[Image] = Field(description="Every image referenced by `taxa`, and no others.")
+
+    @model_validator(mode="after")
+    def _check_pack_version(self) -> Manifest:
+        """Reject a manifest written to a different schema version.
+
+        Checked explicitly rather than left to `extra="forbid"` to fall over on
+        a renamed field, because the resulting message is the difference between
+        "your pack is from the previous milestone, rebuild it" and a list of
+        unexpected keys that the reader has to reverse-engineer into that.
+        """
+        if self.pack_version != PACK_VERSION:
+            message = (
+                f"manifest is pack_version {self.pack_version}; this build reads "
+                f"{PACK_VERSION}. Rebuild it with `sift-pack promote-pack --state "
+                f"{self.state}`. There is no in-place upgrade: version "
+                f"{PACK_VERSION} requires per-source versions that a version "
+                f"{self.pack_version} pack does not record."
+            )
+            raise ValueError(message)
+        return self
 
     @model_validator(mode="after")
     def _check_referential_integrity(self) -> Manifest:

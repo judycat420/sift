@@ -1,0 +1,24 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:42:19.177212+00:00",
+ "key": "CLVU",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "N"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   },
+   {
+    "region": "SPM",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Clinopodium vulgare L.",
+  "symbol": "CLVU"
+ }
+}

@@ -32,11 +32,19 @@ from typing import Any
 
 __all__ = ["PROJECTION_VERSION", "project"]
 
-PROJECTION_VERSION = 2
+PROJECTION_VERSION = 3
 """Bump when any projection below changes shape.
 
 Included in the cache key, so a bump partitions the cache rather than
 corrupting it. Entries at older versions become unreachable and prunable.
+
+Version 3 adds `establishment_means` to the taxon projection, carrying the
+`place` sub-object and not only the value. The place is the whole point: iNat
+answers a per-place query from the nearest ancestor place that has a listing, so
+a bare `"introduced"` cannot be distinguished from `"introduced somewhere in
+North America"`. Keeping only the value would have repeated the version-2
+mistake exactly — see below — on the one field where getting it wrong puts a
+continent-scoped claim on a state card.
 
 Version 2 adds `photos[].url`. Version 1 dropped it on the reasoning that image
 bytes come from the open-data bucket keyed by photo id — true, but the id alone
@@ -105,8 +113,37 @@ def _project_species_count(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _project_establishment_means(taxon: dict[str, Any]) -> dict[str, Any] | None:
+    """Copy the per-place establishment status, place included, preserving absence.
+
+    The `place` sub-object is carried because iNaturalist answers a query for one
+    place from the nearest ancestor place that has a listing, and says so only
+    here. Dropping it would leave a caller unable to tell a Michigan listing from
+    a North America one, which is the difference between a state-scoped claim and
+    a continent-scoped one wearing a state's name.
+
+    Absent when the query carried no `preferred_place_id`, and absent when it did
+    but no listing covers that place — the two are indistinguishable in the
+    response and neither is filled in from anywhere else.
+    """
+    means = taxon.get("establishment_means")
+    if not isinstance(means, dict):
+        return None
+    place = means.get("place")
+    return {
+        "establishment_means": means.get("establishment_means"),
+        "place": {
+            "id": place.get("id"),
+            "name": place.get("name"),
+            "admin_level": place.get("admin_level"),
+        }
+        if isinstance(place, dict)
+        else None,
+    }
+
+
 def _project_taxon(taxon: dict[str, Any]) -> dict[str, Any]:
-    """Identity and the ancestor list, from which genus and family are read."""
+    """Identity, the ancestor list, and the per-place establishment status."""
     ancestors = taxon.get("ancestors")
     return {
         "id": taxon.get("id"),
@@ -116,6 +153,7 @@ def _project_taxon(taxon: dict[str, Any]) -> dict[str, Any]:
         ]
         if isinstance(ancestors, list)
         else None,
+        "establishment_means": _project_establishment_means(taxon),
     }
 
 

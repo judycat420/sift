@@ -34,6 +34,26 @@ RECORDED_TAXON_IDS: list[int] = json.loads(
 # the recorded fixtures can serve.
 FIXTURE_POOL_LIMIT = len(RECORDED_TAXON_IDS) // 2
 
+# The exact per-place establishment batches that were recorded. A cache key
+# covers the whole parameter set, so asking about a subset of these IDs is a
+# different key and a miss — tests replay the batch verbatim. Read from the
+# fixture set for the same reason RECORDED_TAXON_IDS is: a restated copy would
+# drift the moment the recorded set changed.
+_NATIVITY = json.loads((FIXTURE_CACHE / "RECORDED_NATIVITY_IDS.json").read_text(encoding="utf-8"))
+RECORDED_NATIVITY_TAXA: dict[str, int] = _NATIVITY["michigan"]
+RECORDED_NATIVITY_IDS: list[int] = sorted(set(RECORDED_NATIVITY_TAXA.values()))
+RECORDED_INHERITED_IDS: list[int] = _NATIVITY["arizona"]
+
+RECORDED_SILENT_TAXON_ID: int = _NATIVITY["silent"]
+"""A taxon the Michigan checklist has no listing for, recorded as its own batch.
+
+Lets a test build a pool in which neither nativity source speaks — the only way
+to reach the CLI's refusal to write a pack with no cards.
+"""
+
+ARIZONA_PLACE_ID = 40
+"""A state iNaturalist answers from an ancestor place, so the guard has work to do."""
+
 
 def recorded_client() -> InatClient:
     """Build an offline client over the recorded fixtures.

@@ -587,9 +587,9 @@ re-download, and deleting a store wrongly costs an afternoon of re-downloading
 and re-transcoding several gigabytes, so the default is the one that cannot lose
 an afternoon.
 
-### 2026-08-08 — USDA PLANTS has no per-state native status; Sift teaches the L48 status
+### 2026-08-08 — USDA PLANTS had no per-state native status, and Sift taught the L48 status
 
-Status: Active
+Status: Superseded by 2026-08-08 — Nativity is claimed only where two independent sources agree
 
 PLANTS records native status by *region* — `L48`, `CAN`, `AK`, `HI`, `PR` — and
 not by state. There is no per-state native status anywhere in the database.
@@ -667,3 +667,178 @@ introduced in another), `N?`, `I?`, `W` (waif) and `GP` (cultivation only) each
 become a distinct rejection reason rather than being rounded to the nearer of
 native and introduced. The cost is a smaller pack; the alternative is a card
 asserting something USDA itself declines to assert.
+
+### 2026-08-08 — Nativity is claimed only where two independent sources agree
+
+Status: Active
+
+A nativity claim now requires USDA PLANTS and the state's iNaturalist place
+checklist to say the same thing. Agreement produces a claim naming both sources
+at `high` confidence; disagreement produces **no claim**, a drop recorded as
+`source_conflict`; exactly one source produces a claim at `medium`; neither
+produces a drop recorded as `no_nativity_source`.
+
+This replaces the 2026-08-08 decision to teach the L48 status, which is now
+superseded. That entry was right that PLANTS has no per-state data and right
+that the resulting error is systematic and invisible. What it assumed, and what
+turned out to be false, is that the alternative was a better single source.
+
+Measurement decided it. Across the 300-taxon Michigan pool the two sources agree
+on 282 of the 285 taxa both cover — 98.9%. The three disagreements are
+*Robinia pseudoacacia*, *Geranium robertianum* and *Clinopodium vulgare*. Michigan
+DNR lists black locust as an invasive species and USDA's L48 `native` is the
+misleading label there; Michigan Flora treats the other two as native
+circumpolar species and the checklist's `introduced` is the wrong one. So
+switching sources outright would have been one fix and two regressions, and
+there is no rule that picks the right source per taxon without already knowing
+the answer.
+
+What the disagreement *does* reliably mark is a contested taxon. All three are
+plants botanists argue about. Refusing to assert either label there is not a
+gap in the pack — it is the pack declining to take a side in a live dispute,
+which is the only honest thing a flashcard can do about one.
+
+The cost is real: three Michigan cards that M4 would have shipped, plus whatever
+each future state's contested set turns out to be. Against that, `high`
+confidence now means something it did not before — two datasets built from
+different evidence by different people agreed — and the claim's scope finally
+matches the card's, because the checklist half is answered by Michigan's own
+list rather than by a region containing Michigan.
+
+The rule is symmetric on purpose. Neither source wins a conflict, neither is
+consulted first, and there is no fallback to whichever has better coverage.
+Every one of those would be a way of turning "the evidence conflicts" into an
+answer.
+
+### 2026-08-08 — A per-place value counts only if it came from that place
+
+Status: Active
+
+iNaturalist answers a `preferred_place_id` query from the nearest ancestor place
+that has a listing. Asking about Arizona returns North America's answer for
+*Elaeagnus umbellata*, *Lythrum salicaria* and *Solanum dulcamara*, and the
+returned value — `introduced` — is indistinguishable from a genuine Arizona
+listing unless you read `establishment_means.place`.
+
+Sift therefore refuses any value whose `place.id` is not the place asked about,
+recording it as `place_not_state_scoped`. It does not downgrade the value to a
+lower confidence band, and it does not fall back to it when the state has
+nothing: an inherited answer is not weak evidence about the state, it is
+evidence about a different polygon.
+
+This is load-bearing rather than defensive. Without it the new source
+reintroduces exactly the error that made USDA's L48 status unfit for a state
+card — a continent-scoped claim rendered as a state-level fact — and it would do
+so while looking like an improvement, because the field name says the right
+thing. Michigan happens to need the guard zero times out of 300 taxa, which is
+precisely why it is tested against a recorded Arizona response instead: a
+Michigan-only fixture set exercises it zero times and passes whether or not it
+works.
+
+Absence is left absent for the same reason. Six Michigan taxa have no Michigan
+listing while having United States and North America listings, and Sift reports
+those as having no value rather than reaching up the place tree.
+
+The cost is a thinner source in states with sparse checklists — more
+single-source `medium` claims and more drops. That is the correct trade: the
+alternative is a `high` claim about the wrong place.
+
+### 2026-08-08 — Curated per-state exclusions, capped at fifteen
+
+Status: Active
+
+`data/state_exclusions.json` is a committed, per-state list of taxa that must
+not become cards, each carrying a reason and the source that establishes it.
+Excluded taxa are dropped at promotion as `curated_exclusion` and appear in the
+unmatched report like any other drop.
+
+It exists because the two-source rule has a blind spot it cannot close: both
+sources can agree and both still be answering a question subtly different from
+the one the card asks. *Echinacea purpurea* is flagged native by USDA and by the
+Michigan checklist, and MNFI records it as state status X — presumed extirpated,
+"widespread via plantings, but not known to be extant via any known native
+populations", last undisputed wild population unobserved since the late 1800s.
+Every purple coneflower a Michigan learner will photograph is a garden plant.
+*Phragmites australis* is a different shape of the same problem: both sources
+answer about a species whose Michigan populations are overwhelmingly the
+invasive European subspecies, and no nativity source can make a species-rank
+card correct there.
+
+The principle worth stating plainly: **a checklist flag is not a curated
+nativity judgement.** It records that a taxon is on a list with a status, not
+that anyone assessed whether a learner in that place will meet a native
+population. This list is the honest acknowledgement of that gap, not a
+convenience for taxa that are merely inconvenient — every entry needs a citeable
+source, enforced by the schema.
+
+It is capped at fifteen entries per state, enforced by `load_exclusions`
+raising rather than by review habit. The reasoning: the list is credible only as
+long as it is patching genuine edge cases. At fifteen hand-patches on a
+300-taxon pack, the honest reading is no longer "both sources are wrong about
+these few" but "something systematic is wrong upstream" — a rank policy, a
+source, a region mapping — and a longer list would hide that rather than fix it.
+Hitting the cap is meant to be a prompt to go and find the real problem.
+
+The cost is a hand-maintained artefact that does not self-update, in a pipeline
+that otherwise derives everything. That is accepted narrowly and reluctantly,
+which is what the cap is for.
+
+### 2026-08-08 — `pack_version` 2: a claim names its sources, plurally
+
+Status: Active
+
+`Taxon.axis1_source: str` becomes `axis1_sources: list[SourceRef]`, non-empty,
+each entry carrying its own version and retrieval time. `Axis1Result.source` and
+`source_version` collapse into `sources`, typed
+`tuple[SourceRef, *tuple[SourceRef, ...]]` so that an empty source list is a
+type error rather than a runtime check.
+
+A single string had nowhere to put the thing that now matters most about a
+claim: how many independent datasets stand behind it. "USDA PLANTS and the
+Michigan checklist both say native" is a materially different statement from
+"USDA PLANTS says native", and the runtime has to be able to show the
+difference — it cannot re-derive it.
+
+A version-1 manifest does not parse, and that is deliberate rather than a
+migration gap. Its taxa carry a bare source name with no per-source version or
+retrieval date, so upgrading one in place would mean inventing the provenance
+that version 2 exists to require. `Manifest` checks the version explicitly and
+says how to rebuild, because the alternative — falling out of `extra="forbid"`
+as a list of unexpected keys — makes the reader reverse-engineer that.
+
+The empty-sources guarantee is type-level only, with no runtime `__post_init__`
+behind it. One was written; mypy reported the raise as unreachable, which under
+`warn_unreachable` is a build failure and is also the proof: no empty tuple can
+reach the constructor, including through `tuple(some_list)`, which does not
+satisfy the type and must be narrowed by the caller first. Keeping the check
+would have meant silencing a correct proof to guard a case that cannot arise.
+Where values genuinely arrive untyped — a manifest parsed from a file —
+`min_length=1` on the pydantic field does the same job at runtime.
+
+Cost: every M4 pack must be rebuilt. Rebuilding is one `promote-pack` run
+against a warm cache, so this is cheap now and would not have been later.
+
+### 2026-08-08 — Projection version 3 carries `establishment_means` with its place
+
+Status: Active
+
+`PROJECTION_VERSION` goes 2 → 3, and `_project_taxon` gains
+`establishment_means` including the whole `place` sub-object rather than only
+the value.
+
+Carrying the place is the entire point. The value alone cannot distinguish a
+Michigan listing from a North America one, so a projection that kept only
+`"introduced"` would have made the place guard unimplementable from cache — and
+would have repeated the version-2 mistake exactly, on the one field where
+getting it wrong puts a continent-scoped claim on a state card. Version 2's
+lesson, recorded at the time, was that a projection which drops a field is a
+decision to re-fetch if it turns out to be needed; this is that lesson applied
+before the fact rather than after.
+
+The bump invalidates every cached entry, not only taxon records, because the
+version is global rather than per-endpoint. That cost less than it sounds:
+`promote-pack` reads the resolved pool from disk and needs ten iNaturalist
+requests per 300-taxon state, and the committed fixture set re-records in about
+thirty. A per-endpoint projection version would avoid the collateral
+invalidation and is worth considering if the cache ever gets expensive to
+rebuild; it is not worth changing the cache-key contract for today.

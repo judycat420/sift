@@ -1,0 +1,58 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:42:02.397209+00:00",
+ "key": "Phragmites australis",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Phragmites australis",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Phragmites australis (Cav.) Trin. ex Steud.",
+    "symbol": "PHAU7"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Phragmites australis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Phragmites australis (Cav.) Trin. ex Steud. ssp. americanus \u00d7 ssp. australis [unnamed hybrid]",
+    "symbol": "PHAUA8"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Phragmites australis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Phragmites australis (Cav.) Trin. ex Steud. ssp. americanus Saltonst., P.M. Peterson & Soreng",
+    "symbol": "PHAUA6"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Phragmites australis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Phragmites australis (Cav.) Trin. ex Steud. ssp. australis",
+    "symbol": "PHAUA7"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Phragmites australis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Phragmites australis (Cav.) Trin. ex Steud. ssp. berlandieri (E. Fourn.) Saltonst. & Hauber",
+    "symbol": "PHAUB2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Phragmites australis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Phragmites australis (Cav.) Trin. ex Steud. var. berlandieri (Fourn.) C.F. Reed",
+    "symbol": "PHAUB"
+   }
+  ]
+ }
+}

@@ -1,0 +1,34 @@
+{
+ "michigan": {
+  "Alliaria petiolata": 56061,
+  "Arisaema triphyllum": 50310,
+  "Asclepias syriaca": 47911,
+  "Asclepias tuberosa": 47912,
+  "Carex intumescens": 128095,
+  "Cichorium intybus": 52913,
+  "Clinopodium vulgare": 84281,
+  "Daucus carota": 76610,
+  "Echinacea purpurea": 48627,
+  "Elaeagnus umbellata": 64697,
+  "Geranium robertianum": 55925,
+  "Hesperis matronalis": 47697,
+  "Impatiens capensis": 47888,
+  "Leonurus cardiaca": 56171,
+  "Monarda fistulosa": 85320,
+  "Monotropa uniflora": 49477,
+  "Phragmites australis": 64237,
+  "Phytolacca americana": 48599,
+  "Pinus strobus": 52391,
+  "Robinia pseudoacacia": 56088,
+  "Symplocarpus foetidus": 48961,
+  "Thuja occidentalis": 54037,
+  "Trillium grandiflorum": 55402,
+  "Verbascum thapsus": 59029
+ },
+ "arizona": [
+  55620,
+  61321,
+  64697
+ ],
+ "silent": 1677724
+}

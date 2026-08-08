@@ -13,18 +13,25 @@ from typing import get_args
 import pytest
 from pydantic import ValidationError
 
-from sift_pack.domains import Axis1Result
+from sift_pack.domains import Axis1Result, NonEmptySources
 from sift_pack.domains.plants import PlantsDomain
+from sift_pack.inat.nativity import inat_source_ref
 from sift_pack.manifest import Confidence, Manifest, SourceRef, Taxon
 from sift_pack.promote import (
+    MAX_EXCLUSIONS_PER_STATE,
+    ExcludedTaxon,
     GenusDemotions,
+    PromotionPolicy,
     PromotionReport,
+    StateExclusions,
     load_demotions,
+    load_exclusions,
     promote,
     unmatched_path,
     write_unmatched,
 )
 from sift_pack.resolved import ResolvedPhoto, ResolvedPool, ResolvedTaxon
+from sift_pack.usda.reconcile import usda_source_ref
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WHEN = datetime(2026, 8, 8, tzinfo=UTC)
@@ -80,12 +87,27 @@ def resolved_pool(taxa: list[ResolvedTaxon]) -> ResolvedPool:
     )
 
 
-def claim(value: str, confidence: str = "high") -> Axis1Result:
-    """One nativity claim."""
-    return Axis1Result(value, "USDA PLANTS", confidence, VERSION)  # type: ignore[arg-type]
+USDA = usda_source_ref(VERSION)
+INAT = inat_source_ref(WHEN, "Michigan")
+
+
+def claim(value: str, confidence: str = "high", sources: int = 2) -> Axis1Result:
+    """One nativity claim, backed by one source or by two agreeing ones."""
+    both: NonEmptySources = (USDA, INAT)
+    return Axis1Result(value, both if sources == 2 else (USDA,), confidence)  # type: ignore[arg-type]
 
 
 NO_DEMOTIONS = GenusDemotions(frozenset(), "")
+NO_EXCLUSIONS = StateExclusions()
+OPEN_POLICY = PromotionPolicy(demotions=NO_DEMOTIONS, exclusions=NO_EXCLUSIONS)
+
+
+def policy(
+    demotions: GenusDemotions = NO_DEMOTIONS,
+    exclusions: StateExclusions = NO_EXCLUSIONS,
+) -> PromotionPolicy:
+    """A promotion policy with either half overridden."""
+    return PromotionPolicy(demotions=demotions, exclusions=exclusions)
 
 
 # --- the invariant: no claim, no card -----------------------------------------
@@ -93,7 +115,7 @@ NO_DEMOTIONS = GenusDemotions(frozenset(), "")
 
 def test_a_taxon_without_a_claim_is_dropped_not_defaulted() -> None:
     pool = resolved_pool([resolved_taxon(1, "Genus one", "Genus")])
-    manifest, report = promote(pool, PlantsDomain(), NO_DEMOTIONS, VERSION)
+    manifest, report = promote(pool, PlantsDomain(), OPEN_POLICY, VERSION)
     assert manifest.taxa == []
     assert manifest.images == []
     assert len(report.unmatched) == 1
@@ -101,11 +123,11 @@ def test_a_taxon_without_a_claim_is_dropped_not_defaulted() -> None:
 
 def test_a_taxon_with_a_claim_becomes_a_card_carrying_its_provenance() -> None:
     pool = resolved_pool([resolved_taxon(1, "Genus one", "Genus")])
-    manifest, report = promote(pool, PlantsDomain({1: claim("native")}), NO_DEMOTIONS, VERSION)
+    manifest, report = promote(pool, PlantsDomain({1: claim("native")}), OPEN_POLICY, VERSION)
     assert report.promoted == 1
     taxon = manifest.taxa[0]
     assert taxon.axis1_value == "native"
-    assert taxon.axis1_source == "USDA PLANTS"
+    assert [s.name for s in taxon.axis1_sources] == ["USDA PLANTS", INAT.name]
     assert taxon.axis1_confidence == "high"
     assert len(manifest.images) == 4
 
@@ -113,7 +135,7 @@ def test_a_taxon_with_a_claim_becomes_a_card_carrying_its_provenance() -> None:
 def test_promotion_partitions_the_pool() -> None:
     pool = resolved_pool([resolved_taxon(n, f"Genus {n}", "Genus") for n in range(1, 6)])
     manifest, report = promote(
-        pool, PlantsDomain({1: claim("native"), 3: claim("introduced")}), NO_DEMOTIONS, VERSION
+        pool, PlantsDomain({1: claim("native"), 3: claim("introduced")}), OPEN_POLICY, VERSION
     )
     assert len(manifest.taxa) + len(report.unmatched) == len(pool.taxa)
     assert {t.inat_taxon_id for t in manifest.taxa} == {1, 3}
@@ -135,10 +157,10 @@ def test_no_taxon_is_constructible_without_an_axis1_source() -> None:
         "answer_rank": "species",
         "image_hashes": [f"{n:064x}" for n in range(4)],
     }
-    with pytest.raises(ValidationError, match="axis1_source"):
+    with pytest.raises(ValidationError, match="axis1_sources"):
         Taxon(**fields)  # type: ignore[arg-type]
-    with pytest.raises(ValidationError, match="axis1_source"):
-        Taxon(**{**fields, "axis1_source": ""})  # type: ignore[arg-type]
+    with pytest.raises(ValidationError, match="axis1_sources"):
+        Taxon(**{**fields, "axis1_sources": []})  # type: ignore[arg-type]
 
 
 def test_confidence_below_medium_is_unrepresentable() -> None:
@@ -159,7 +181,7 @@ def test_confidence_below_medium_is_unrepresentable() -> None:
             family="F",
             obs_count=1,
             axis1_value="native",
-            axis1_source="USDA PLANTS",
+            axis1_sources=[USDA],
             axis1_confidence="low",  # type: ignore[arg-type]
             answer_rank="species",
             image_hashes=[f"{n:064x}" for n in range(4)],
@@ -171,7 +193,7 @@ def test_every_promoted_claim_is_high_or_medium() -> None:
     manifest, _ = promote(
         pool,
         PlantsDomain({1: claim("native", "high"), 2: claim("introduced", "medium")}),
-        NO_DEMOTIONS,
+        OPEN_POLICY,
         VERSION,
     )
     assert {t.axis1_confidence for t in manifest.taxa} <= {"high", "medium"}
@@ -183,7 +205,7 @@ def test_every_promoted_claim_is_high_or_medium() -> None:
 def test_every_dropped_taxon_reaches_the_csv_with_a_reason(tmp_path: Path) -> None:
     pool = resolved_pool([resolved_taxon(n, f"Genus {n}", "Genus") for n in range(1, 4)])
     reasons = {n: ("no_plants_record", f"nothing for taxon {n}") for n in (1, 2, 3)}
-    _, report = promote(pool, PlantsDomain(), NO_DEMOTIONS, VERSION, reasons)
+    _, report = promote(pool, PlantsDomain(), OPEN_POLICY, VERSION, reasons)
     written = write_unmatched(report, "MI", tmp_path)
 
     with written.open(encoding="utf-8", newline="") as handle:
@@ -220,7 +242,7 @@ def test_a_demoted_genus_asks_only_for_genus() -> None:
     )
     demotions = GenusDemotions(frozenset({"Carex"}), "")
     manifest, report = promote(
-        pool, PlantsDomain({1: claim("native"), 2: claim("native")}), demotions, VERSION
+        pool, PlantsDomain({1: claim("native"), 2: claim("native")}), policy(demotions), VERSION
     )
     ranks = {t.scientific_name: t.answer_rank for t in manifest.taxa}
     assert ranks == {"Carex intumescens": "genus", "Pinus strobus": "species"}
@@ -249,14 +271,14 @@ def test_a_missing_demotion_list_is_an_error_not_an_empty_set(tmp_path: Path) ->
 
 def test_the_manifest_round_trips() -> None:
     pool = resolved_pool([resolved_taxon(1, "Genus one", "Genus")])
-    manifest, _ = promote(pool, PlantsDomain({1: claim("native")}), NO_DEMOTIONS, VERSION)
+    manifest, _ = promote(pool, PlantsDomain({1: claim("native")}), OPEN_POLICY, VERSION)
     first = manifest.model_dump_json(indent=2)
     assert Manifest.model_validate_json(first).model_dump_json(indent=2) == first
 
 
 def test_the_manifest_is_referentially_intact() -> None:
     pool = resolved_pool([resolved_taxon(n, f"Genus {n}", "Genus") for n in (1, 2)])
-    manifest, _ = promote(pool, PlantsDomain({1: claim("native")}), NO_DEMOTIONS, VERSION)
+    manifest, _ = promote(pool, PlantsDomain({1: claim("native")}), OPEN_POLICY, VERSION)
     # Only the promoted taxon's images are carried; a dropped taxon's images
     # would be orphans and the schema would have rejected the manifest.
     assert {i.taxon_id for i in manifest.images} == {1}
@@ -265,7 +287,7 @@ def test_the_manifest_is_referentially_intact() -> None:
 
 def test_the_manifest_carries_the_pools_sources() -> None:
     pool = resolved_pool([resolved_taxon(1, "Genus one", "Genus")])
-    manifest, _ = promote(pool, PlantsDomain({1: claim("native")}), NO_DEMOTIONS, VERSION)
+    manifest, _ = promote(pool, PlantsDomain({1: claim("native")}), OPEN_POLICY, VERSION)
     assert manifest.sources
 
 
@@ -301,11 +323,139 @@ def test_mypy_rejects_a_taxon_built_without_a_source(tmp_path: Path) -> None:
         check=False,
     )
     assert result.returncode != 0, result.stdout
-    assert "axis1_source" in result.stdout
+    assert "axis1_sources" in result.stdout
 
 
 def test_the_promoted_manifest_json_is_plain_json() -> None:
     pool = resolved_pool([resolved_taxon(1, "Genus one", "Genus")])
-    manifest, _ = promote(pool, PlantsDomain({1: claim("native")}), NO_DEMOTIONS, VERSION)
+    manifest, _ = promote(pool, PlantsDomain({1: claim("native")}), OPEN_POLICY, VERSION)
     payload = json.loads(manifest.model_dump_json())
-    assert payload["taxa"][0]["axis1_source"] == "USDA PLANTS"
+    assert payload["taxa"][0]["axis1_sources"][0]["name"] == "USDA PLANTS"
+
+
+# --- curated exclusions --------------------------------------------------------
+
+
+def excluded(taxon_id: int, name: str) -> StateExclusions:
+    """An exclusion list holding one Michigan entry."""
+    return StateExclusions(
+        states={
+            "MI": [
+                ExcludedTaxon(
+                    taxon_id=taxon_id,
+                    scientific_name=name,
+                    reason="both sources agree and both are wrong here",
+                    source="a citeable authority",
+                )
+            ]
+        }
+    )
+
+
+def test_an_excluded_taxon_is_dropped_even_when_both_sources_agree() -> None:
+    pool = resolved_pool(
+        [resolved_taxon(1, "Genus one", "Genus"), resolved_taxon(2, "Two", "Genus")]
+    )
+    # Both taxa carry a two-source agreement claim; only the excluded one is withheld.
+    manifest, report = promote(
+        pool,
+        PlantsDomain({1: claim("native"), 2: claim("native")}),
+        policy(exclusions=excluded(1, "Genus one")),
+        VERSION,
+    )
+    assert {t.inat_taxon_id for t in manifest.taxa} == {2}
+    assert report.excluded == ["Genus one"]
+
+
+def test_an_exclusion_reaches_the_csv_with_its_reason_and_source(tmp_path: Path) -> None:
+    pool = resolved_pool([resolved_taxon(1, "Genus one", "Genus")])
+    _, report = promote(
+        pool,
+        PlantsDomain({1: claim("native")}),
+        policy(exclusions=excluded(1, "Genus one")),
+        VERSION,
+    )
+    written = write_unmatched(report, "MI", tmp_path)
+    with written.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [r["reason"] for r in rows] == ["curated_exclusion"]
+    assert "a citeable authority" in rows[0]["detail"]
+
+
+def test_an_exclusion_for_another_state_does_not_apply() -> None:
+    pool = resolved_pool([resolved_taxon(1, "Genus one", "Genus")])
+    elsewhere = StateExclusions(
+        states={
+            "AZ": [ExcludedTaxon(taxon_id=1, scientific_name="Genus one", reason="r", source="s")]
+        }
+    )
+    manifest, report = promote(
+        pool, PlantsDomain({1: claim("native")}), policy(exclusions=elsewhere), VERSION
+    )
+    assert len(manifest.taxa) == 1
+    assert report.excluded == []
+
+
+def test_a_renamed_excluded_taxon_is_flagged_rather_than_silently_applied(tmp_path: Path) -> None:
+    # The ID is the key, so the exclusion still fires — but the reasoning was
+    # recorded about an organism, and a merged taxon may not be that organism.
+    pool = resolved_pool([resolved_taxon(1, "Genus renamed", "Genus")])
+    _, report = promote(
+        pool,
+        PlantsDomain({1: claim("native")}),
+        policy(exclusions=excluded(1, "Genus one")),
+        VERSION,
+    )
+    written = write_unmatched(report, "MI", tmp_path)
+    with written.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert "re-check that the reasoning still applies" in rows[0]["detail"]
+
+
+def test_the_committed_exclusion_list_withholds_the_two_seeded_taxa() -> None:
+    entries = load_exclusions(REPO_ROOT / "data" / "state_exclusions.json").for_state("MI")
+    assert {e.scientific_name for e in entries.values()} == {
+        "Echinacea purpurea",
+        "Phragmites australis",
+    }
+
+
+def test_every_committed_exclusion_cites_a_source() -> None:
+    # An exclusion with no citeable basis is a preference, and this file is not
+    # for preferences.
+    exclusions = load_exclusions(REPO_ROOT / "data" / "state_exclusions.json")
+    for entries in exclusions.states.values():
+        for entry in entries:
+            assert entry.source.strip()
+            assert entry.reason.strip()
+
+
+def test_the_exclusion_list_is_capped_so_it_cannot_hide_a_systematic_problem() -> None:
+    too_many = [
+        ExcludedTaxon(taxon_id=n, scientific_name=f"S {n}", reason="r", source="s")
+        for n in range(1, MAX_EXCLUSIONS_PER_STATE + 2)
+    ]
+    with pytest.raises(ValidationError, match="over the cap"):
+        StateExclusions(states={"MI": too_many})
+
+
+def test_the_committed_list_is_within_the_cap() -> None:
+    exclusions = load_exclusions(REPO_ROOT / "data" / "state_exclusions.json")
+    for state, entries in exclusions.states.items():
+        assert len(entries) <= MAX_EXCLUSIONS_PER_STATE, state
+
+
+def test_a_missing_exclusion_list_is_an_error_not_an_empty_list(tmp_path: Path) -> None:
+    # Silently excluding nothing would ship the exact cards the list withholds.
+    with pytest.raises(ValueError, match="missing or unreadable"):
+        load_exclusions(tmp_path / "absent.json")
+
+
+def test_an_exclusion_missing_its_source_does_not_parse(tmp_path: Path) -> None:
+    path = tmp_path / "exclusions.json"
+    path.write_text(
+        json.dumps({"states": {"MI": [{"taxon_id": 1, "scientific_name": "S", "reason": "r"}]}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="malformed"):
+        load_exclusions(path)

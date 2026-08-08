@@ -7,9 +7,10 @@ every user-facing claim attached to the source it came from and a confidence in
 it. Where a claim cannot be attributed, it is dropped and counted — never
 guessed.
 
-Status: **M4 — promotion**. The pipeline runs end to end: `fetch` builds a
-candidate pool, `resolve` stores its photos, and `promote-pack` attaches a
-sourced nativity claim from USDA PLANTS and emits a manifest.
+Status: **M4.1 — two-source nativity**. The pipeline runs end to end: `fetch`
+builds a candidate pool, `resolve` stores its photos, and `promote-pack`
+attaches a nativity claim — but only where USDA PLANTS and the state's
+iNaturalist place checklist agree — and emits a manifest.
 
 ## Getting started
 
@@ -50,8 +51,11 @@ Individual targets: `make lint`, `make format`, `make typecheck`, `make test`.
 
 ```
 iNaturalist ──fetch──> CandidatePool ──resolve──> ResolvedPool ──promote──> Manifest
-   API                  (work/)      + S3 bytes    (work/ +      + USDA       (packs/)
-                                                    images/)     PLANTS
+   API                  (work/)      + S3 bytes    (work/ +          ^         (packs/)
+                                                    images/)         │
+                                    USDA PLANTS (L48) ───────────────┤
+                          iNaturalist place checklist (state) ───────┘
+                                          claim only where they agree
 ```
 
 Each stage adds exactly what it can source. A candidate photo has a URL; a
@@ -99,6 +103,7 @@ src/sift_pack/           The build half: fetches, filters, assembles packs
     places.py            State -> place_id, resolved once into data/places.json
     deck.py              Which taxa are worth learning in a place
     photos.py            Month-stratified photo sampling and selection policy
+    nativity.py          Per-place establishment status, and the place guard on it
     projections.py       What Sift reads from each response; the cache stores this
   fetch.py               Orchestrates the three stages into one pool
   resolved.py            Resolved schema — photos that exist as stored bytes
@@ -109,13 +114,15 @@ src/sift_pack/           The build half: fetches, filters, assembles packs
   lock.py                One fetch at a time; Sift is a guest on a public API
   stats.py               What a pool actually contains
   domains/               The one axis on which plants/birds/pollinators differ
-  usda/                  The only code that can create a nativity claim
+  usda/                  One of the two nativity sources
     client.py            Cached, projected access to the PLANTS services API
     reconcile.py         Three named matching tiers, and when to refuse
-    index.py             Reconciles a whole pool; partitions it into claims/drops
+    index.py             Reconciles a whole pool against PLANTS
+  nativity.py            The two-source rule: claim on agreement, refuse on conflict
   promote.py             Terminal step: resolved taxa + claims -> manifest
   cli.py                 `sift-pack fetch | resolve | promote-pack | stats | gc`
 data/genus_demotions.json  Genera a card may only ask about at genus rank
+data/state_exclusions.json Taxa withheld per state, each with a reason and source
 images/                  Content-addressed WebP store (gitignored)
 data/places.json         Committed state -> place_id table
 scripts/record_fixtures.py  Re-record test fixtures (live; run by hand)
@@ -131,22 +138,45 @@ STANDARDS.md             The contract all contributions must meet
 Read [STANDARDS.md](STANDARDS.md). The two rules that shape everything else:
 
 - **Provenance** — a function producing a user-facing factual claim returns
-  `(value, source, confidence)`, never a bare value. `Axis1Result` is this made
-  structural: it has no default for any field, so an unattributed claim is a
-  type error rather than something a review has to catch.
+  `(value, sources, confidence)`, never a bare value. `Axis1Result` is this made
+  structural: it has no default for any field, and `sources` is typed so that an
+  *empty* source list is a type error too. An unattributed claim does not
+  typecheck, rather than being something a review has to catch.
 - **No silent failures** — unknown data is dropped and counted, never guessed.
   A domain returning `None` means "cannot determine"; callers must drop the
   taxon and count it, and the schema gives them nowhere to put a guess.
 
 ## What a nativity label actually means
 
-USDA PLANTS records native status by **region** (`L48`, `CAN`, …), never per
-state. A Michigan card therefore says what USDA records for the lower 48, which
-is not the same as "native to Michigan" — a Sonoran Desert native naturalised
-around Detroit reads as `L48 (N)`. This is systematic and unfixable from PLANTS;
-it is documented at `docs/decisions.md`, 2026-08-08, and stated on the source in
-`docs/sources.md`. Every claim also carries the retrieval date, because PLANTS
-publishes no version stamp.
+A card says **native** only when two independent sources said so: USDA PLANTS
+for the lower 48, and the state's iNaturalist place checklist for the state
+itself. Neither is trusted alone, because they fail in opposite directions.
+PLANTS has no per-state data at all, so a Sonoran Desert native naturalised
+around Detroit reads `L48 (N)` — that is how `Robinia pseudoacacia`, which
+Michigan DNR lists as invasive, would otherwise read native. The checklist is
+per-place but curator-maintained, and calls `Geranium robertianum` and
+`Clinopodium vulgare` introduced where Michigan Flora considers both native.
+
+Across the 300-taxon Michigan pool the two agree on 282 of the 285 they both
+cover. The three they disagree on are all genuinely contested plants, and all
+three are dropped rather than labelled — a flashcard is not the place to take a
+side in a live botanical dispute. A taxon only one source can speak to still
+gets a card, at `medium` rather than `high`.
+
+Two further honesty constraints:
+
+- A checklist value is used only when iNaturalist answered from the state
+  itself. It will answer a per-place query from an ancestor place — North
+  America, say — and the value alone looks identical, so anything inherited is
+  refused outright.
+- A checklist flag is not a curated nativity judgement. `Echinacea purpurea` is
+  flagged native in Michigan and is presumed extirpated there; both sources
+  agree and both are wrong. A short, capped, cited list at
+  `data/state_exclusions.json` withholds those.
+
+Every claim carries each source's own retrieval date, because neither source
+publishes a version stamp. See `docs/decisions.md`, 2026-08-08, and
+`docs/sources.md`.
 
 ## Licensing
 

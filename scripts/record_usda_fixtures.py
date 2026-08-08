@@ -57,6 +57,26 @@ SUPPORTING = [
     # Not part of the hand-verified ground truth; recorded because the CLI
     # tests need a taxon in a demoted genus to exercise genus demotion.
     "Carex intumescens",
+    # M4.1. The CLI test drives the whole terminal path over one pool, and
+    # `fetch_establishment` asks about every taxon in it — so the PLANTS half of
+    # the fixture set has to cover exactly the same taxa as the iNaturalist half
+    # (scripts/record_fixtures.py, NATIVITY_TAXON_IDS). These are the rest.
+    #
+    # The known contested set: USDA calls all three L48-native and the Michigan
+    # checklist calls all three introduced, so all three must come out as
+    # source_conflict rather than as cards.
+    "Robinia pseudoacacia",
+    "Geranium robertianum",
+    "Clinopodium vulgare",
+    # Both sources call these native and both are wrong for a Michigan learner;
+    # withheld by data/state_exclusions.json.
+    "Echinacea purpurea",
+    "Phragmites australis",
+    # The taxa the recorded deck stage happens to select, so a pool built from
+    # the iNaturalist fixtures reconciles end to end.
+    "Asclepias syriaca",
+    "Monotropa uniflora",
+    "Verbascum thapsus",
 ]
 
 

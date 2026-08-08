@@ -31,12 +31,21 @@ native when nobody actually checked.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from typing import Protocol, runtime_checkable
 
-from sift_pack.manifest import Confidence
+from sift_pack.manifest import Confidence, SourceRef
 
-__all__ = ["Axis1Result", "TaxonDomain"]
+__all__ = ["Axis1Result", "NonEmptySources", "TaxonDomain"]
+
+NonEmptySources = tuple[SourceRef, *tuple[SourceRef, ...]]
+"""One or more `SourceRef`, with the "one or more" part checked by the type checker.
+
+Spelled as a variadic tuple rather than `tuple[SourceRef, ...]` because the two
+differ exactly where it matters: `()` inhabits the latter and not this. An
+unsourced claim is therefore a mypy error at the call site, in the same way a
+missing argument is — not a runtime check somebody has to remember to run, and
+not a `min_length` that only fires once the claim has already been built.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,33 +62,53 @@ class Axis1Result:
     `frozen` so a claim cannot be edited away from its source after the fact;
     `slots` so a stray attribute cannot be bolted on to smuggle one through.
 
+    WHY `sources` IS PLURAL
+    -----------------------
+    A claim may rest on more than one dataset, and how many is not decoration:
+    it is the difference between "two independent sources agree" and "one source
+    had an opinion". `confidence` carries that distinction and `sources` carries
+    the evidence for it, so a reader can check the second against the first.
+    Aggregation follows STANDARDS.md rule 4 — a combined claim names every
+    contributing source and is never more confident than its weakest input.
+
     Attributes:
         value: The claim itself, in the domain's vocabulary — e.g. `"native"`
             or `"introduced"` for plants. Never a display string.
-        source: Which dataset asserted it, e.g. `"USDA PLANTS"`. The name must
-            match a `SourceRef.name` in the manifest the claim ends up in.
+        sources: Every dataset that asserted `value`, each carrying its own
+            version and retrieval time. Cannot be empty — see `NonEmptySources`.
+            Each name must match a `SourceRef.name` in the manifest the claim
+            ends up in.
         confidence: How much to trust it. Cannot be `"low"`: low-confidence
             claims are dropped upstream rather than downgraded into a pack.
-        source_version: Which version of `source` was consulted. Without this,
-            a claim cannot be re-checked when the upstream dataset changes, and
-            "USDA says native" quietly means "USDA said native, once".
+            `"high"` is reserved for agreement between two sources.
 
     Example:
-        >>> from datetime import date
-        >>> claim = Axis1Result(
-        ...     value="native",
-        ...     source="USDA PLANTS",
-        ...     confidence="high",
-        ...     source_version=date(2026, 7, 1),
+        >>> from datetime import UTC, datetime
+        >>> usda = SourceRef(
+        ...     name="USDA PLANTS",
+        ...     version="2026-08-08",
+        ...     retrieved_at=datetime(2026, 8, 8, tzinfo=UTC),
+        ...     url="https://plantsservices.sc.egov.usda.gov/api/",
         ... )
-        >>> claim.value, claim.source
-        ('native', 'USDA PLANTS')
+        >>> claim = Axis1Result(value="native", sources=(usda,), confidence="high")
+        >>> claim.value, [source.name for source in claim.sources]
+        ('native', ['USDA PLANTS'])
     """
 
     value: str
-    source: str
+    sources: NonEmptySources
     confidence: Confidence
-    source_version: date
+
+    # There is deliberately no __post_init__ checking that `sources` is
+    # non-empty. One was written, and mypy reported the raise as unreachable —
+    # under `warn_unreachable` that is a build failure, and it is also the
+    # point: the checker had already proved that no empty tuple can reach this
+    # constructor, including through `tuple(some_list)`, which does not satisfy
+    # `NonEmptySources` and must be narrowed by the caller first. Keeping the
+    # check would have meant silencing a correct proof to guard a case that
+    # cannot arise. The runtime half of this guarantee lives where values do
+    # arrive untyped: `Taxon.axis1_sources` carries `min_length=1`, so a
+    # manifest cannot hold an unsourced claim however it was parsed.
 
 
 @runtime_checkable

@@ -1,0 +1,19 @@
+{
+  "comment": "Taxa that must not become cards in a given state, with the reason and the source that establishes it. A checklist flag is not a curated nativity judgement: this list is the honest acknowledgement that both automated sources can agree and both still be wrong for a small number of taxa. It is not a place to park taxa that are merely inconvenient. See docs/decisions.md, 2026-08-08, 'Curated per-state exclusions, capped and reviewed'. Past MAX_EXCLUSIONS_PER_STATE entries for one state, the pipeline fails rather than growing the list: that many hand-patches means a systematic problem to fix upstream, not more edge cases to enumerate.",
+  "states": {
+    "MI": [
+      {
+        "taxon_id": 48627,
+        "scientific_name": "Echinacea purpurea",
+        "reason": "Presumed extirpated as a Michigan native. MNFI records state status X, 'widespread via plantings, but not known to be extant via any known native populations', with the last undisputed wild populations unobserved since the late 1800s. Both USDA PLANTS (L48) and the Michigan checklist call it native, so no automated rule reaches it; every plant a Michigan learner will photograph is a garden planting or an escape from one.",
+        "source": "Michigan Natural Features Inventory, https://mnfi.anr.msu.edu/species/description/13501/Echinacea-purpurea"
+      },
+      {
+        "taxon_id": 64237,
+        "scientific_name": "Phragmites australis",
+        "reason": "Nearly all Michigan material is the invasive European lineage subsp. australis rather than the native subsp. americanus, and the two are not separable in a photograph at the resolution a card shows. Both sources call the species native, and both are answering about a species whose Michigan populations are overwhelmingly not the native one. This is a rank problem rather than a source problem: no nativity source can make a species-rank card here correct, so the card is not built.",
+        "source": "Michigan Natural Features Inventory invasive species profile, https://mnfi.anr.msu.edu/invasive-species/PhragmitesBCP.pdf"
+      }
+    ]
+  }
+}

@@ -1,0 +1,122 @@
+{
+ "endpoint": "places_autocomplete",
+ "fetched_at": "2026-08-08T13:05:55.192050+00:00",
+ "params": {
+  "q": "Washington"
+ },
+ "projection_version": 3,
+ "response": {
+  "results": [
+   {
+    "admin_level": 10,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     46
+    ],
+    "id": 46,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97395,
+     6873,
+     11544,
+     25841
+    ],
+    "id": 25841,
+    "name": "New Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     25,
+     2367
+    ],
+    "id": 2367,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     30,
+     2464
+    ],
+    "id": 2464,
+    "name": "Washington County, US, NC"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     35,
+     2303
+    ],
+    "id": 2303,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     22,
+     971
+    ],
+    "id": 971,
+    "name": "Washington County, US, ID"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     26,
+     1971
+    ],
+    "id": 1971,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     28,
+     2987
+    ],
+    "id": 2987,
+    "name": "Washington County, US, MO"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     3,
+     2704
+    ],
+    "id": 2704,
+    "name": "Washington"
+   },
+   {
+    "admin_level": 20,
+    "ancestor_place_ids": [
+     97394,
+     1,
+     34,
+     2579
+    ],
+    "id": 2579,
+    "name": "Washington County, US, CO"
+   }
+  ],
+  "total_results": 191
+ }
+}

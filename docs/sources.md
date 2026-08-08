@@ -55,10 +55,13 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
   - Many photos are NC-licensed and therefore excluded by our licence policy;
     expect a substantial share of taxa to have no usable image.
   - No edibility, toxicity or medicinal data. Do not attempt to derive it.
-  - `establishment_means` reports native/introduced status per place, and Sift
-    deliberately does not use it. It is curator-maintained, sparsely populated,
-    and disagrees with USDA PLANTS; nativity comes from USDA (M3). See
-    `docs/decisions.md`, 2026-08-07.
+  - `establishment_means` reports native/introduced status per place. Since M4.1
+    Sift reads it as **one of two** nativity sources, never alone — see the
+    separate entry below, which carries its own limitations. The M3 position
+    that it is unusable was based on it disagreeing with USDA; measurement
+    showed the two agree on 282 of 285 Michigan taxa, and that the disagreements
+    mark genuinely contested plants rather than errors in either source. See
+    `docs/decisions.md`, 2026-08-08.
   - `num_identification_agreements` is not a confidence measure and must not be
     used as one. It counts identifications agreeing with the observer's own, and
     research grade requires only two identifications in total, so an ordinary
@@ -169,3 +172,77 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
     changed; treat the endpoint as unstable and fail loudly rather than
     silently fetching an empty file.
   - No phenology, cultivation or edibility data of usable quality.
+
+## iNaturalist place checklists (`establishment_means`)
+
+- **URL:** `https://api.inaturalist.org/v1/taxa` with `preferred_place_id`. The
+  underlying data is a place's check list, e.g. the Michigan Check List.
+- **Used for:** Per-place native / introduced status, as one of the two sources
+  a nativity claim requires. Never used alone to assert a claim that USDA
+  PLANTS contradicts; see `docs/decisions.md`, 2026-08-08.
+- **Retrieved:** 2026-08-08. Recorded per claim as
+  `"<Place> checklist retrieved <date>"`.
+- **Licence:** Checklist data is part of iNaturalist's metadata, CC0 per the
+  iNaturalist API terms — the same basis on which taxon names and observation
+  counts are used. Photo licences are per-photo and unrelated; see the
+  iNaturalist API entry above.
+- **Citation:** "iNaturalist. Place checklist for <place>. Accessed <date>."
+- **Refresh cadence:** Continuous and unannounced. A curator can add, change or
+  remove a listing at any time, with no trace in the response.
+- **Known limitations:**
+  - **A per-place query can be answered by an ancestor place.** Asking about
+    Arizona can return North America's listing, and the value alone is
+    indistinguishable from a genuine Arizona one. The response names the place
+    it answered from, in `establishment_means.place`, and Sift refuses any value
+    whose place is not the one asked about. Without that check the source
+    reintroduces exactly the scope error that made USDA's L48 status wrong for a
+    state card. Measured: Michigan needs the check zero times out of 300 taxa;
+    Arizona needs it constantly.
+  - **No version stamp.** There is no edition, revision or last-modified marker
+    on a checklist, so claims are versioned by retrieval date. Two retrievals
+    months apart are distinguishable only by that stamp, and a curator edit
+    between them leaves no other trace. This is the same weakness as the PLANTS
+    retrieval date, recorded as the best available answer rather than a good one.
+  - **Curator-maintained, and wrong on contested taxa.** The Michigan checklist
+    calls *Geranium robertianum* and *Clinopodium vulgare* introduced where
+    Michigan Flora considers both native circumpolar species. It is right where
+    USDA is wrong on *Robinia pseudoacacia*, which Michigan DNR lists invasive.
+    Across the 300-taxon Michigan pool, replacing USDA with this source outright
+    would have been one fix and two regressions — which is why neither source is
+    trusted alone and disagreement produces no claim.
+  - **Coverage is uneven between places and cannot be assumed.** 294 of 300
+    Michigan taxa have a value; six have none at all despite having United
+    States and North America listings, because Sift does not inherit. A state
+    with a thinner checklist will yield more single-source claims, which carry
+    `medium` confidence rather than `high`.
+  - **A checklist flag is not a curated nativity judgement.** It records that a
+    taxon is on a place's list with a status, not that anyone assessed whether a
+    learner in that place will meet a native population. *Echinacea purpurea* is
+    flagged native in Michigan and is presumed extirpated there; both sources
+    agree and both are wrong. Cases like it are handled by
+    `data/state_exclusions.json`, not by this source.
+  - Its vocabulary is wider than the plants domain's — `naturalised`,
+    `invasive`, `managed`, `unknown` also occur. Only `native`, `endemic`
+    (mapped to native) and `introduced` are read; everything else is a recorded
+    drop rather than being rounded to the nearer of the two.
+
+## Michigan Natural Features Inventory (MNFI)
+
+- **URL:** https://mnfi.anr.msu.edu/
+- **Used for:** Nothing automated. Cited by hand in
+  `data/state_exclusions.json` as the authority for individual curated
+  exclusions, and read by a person when writing one.
+- **Retrieved:** 2026-08-08, by hand.
+- **Licence:** © Michigan State University Board of Trustees. Not ingested,
+  redistributed or derived from — only cited as the reason a taxon is withheld,
+  which is fair use of a citation rather than use of the data.
+- **Citation:** "Michigan Natural Features Inventory. <Species> species
+  account. Michigan State University Extension. Accessed <date>."
+- **Refresh cadence:** Irregular.
+- **Known limitations:**
+  - Not machine-read, so nothing here is checked by the pipeline. An exclusion
+    citing MNFI is only as current as the person who wrote it; the cap in
+    `sift_pack.promote.MAX_EXCLUSIONS_PER_STATE` exists partly because
+    hand-curated entries do not self-update.
+  - Michigan only. It establishes nothing about any other state, and an
+    exclusion list for another state needs that state's own authority.

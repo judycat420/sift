@@ -25,7 +25,12 @@ from sift_pack.usda.client import (
     PlantsError,
     parse_plants_name,
 )
-from sift_pack.usda.reconcile import NATIVITY_REGION, USDA_SOURCE_NAME, reconcile
+from sift_pack.usda.reconcile import (
+    NATIVITY_REGION,
+    USDA_SOURCE_NAME,
+    reconcile,
+    usda_source_ref,
+)
 
 VERSION = date(2026, 8, 8)
 HYBRID = "\u00d7"  # U+00D7, the botanical hybrid sign
@@ -109,8 +114,8 @@ def test_tier_1_exact_accepted_name_is_high_confidence(tmp_path: Path) -> None:
     assert out.tier == 1
     assert out.claim is not None
     assert (out.claim.value, out.claim.confidence) == ("native", "high")
-    assert out.claim.source == USDA_SOURCE_NAME
-    assert out.claim.source_version == VERSION
+    assert [source.name for source in out.claim.sources] == [USDA_SOURCE_NAME]
+    assert out.claim.sources[0].version == f"retrieved {VERSION.isoformat()}"
 
 
 def test_tier_2_synonym_follows_to_the_accepted_taxon(tmp_path: Path) -> None:
@@ -341,7 +346,7 @@ def test_an_unwired_plants_domain_still_determines_nothing() -> None:
 
 
 def test_the_domain_returns_only_what_the_index_holds() -> None:
-    claim = Axis1Result("native", USDA_SOURCE_NAME, "high", VERSION)
+    claim = Axis1Result("native", (usda_source_ref(VERSION),), "high")
     domain = PlantsDomain({48662: claim})
     assert domain.axis1_answer(48662, "MI") is claim
     assert domain.axis1_answer(99999, "MI") is None
@@ -391,8 +396,9 @@ def test_every_spot_check_claim_carries_full_provenance() -> None:
     for name, _ in spot_check_cases():
         claim = reconcile(client, 1, name, VERSION).claim
         assert claim is not None
-        assert claim.source == USDA_SOURCE_NAME
-        assert claim.source_version == VERSION
+        assert [source.name for source in claim.sources] == [USDA_SOURCE_NAME]
+        assert claim.sources[0].version == f"retrieved {VERSION.isoformat()}"
+        assert claim.sources[0].url
         assert claim.confidence in ("high", "medium")
 
 

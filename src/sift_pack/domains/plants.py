@@ -1,4 +1,4 @@
-"""The plants domain: axis 1 is nativity, sourced from USDA PLANTS.
+"""The plants domain: axis 1 is nativity, and only where two sources agree.
 
 WHY THIS MODULE EXISTS
 ----------------------
@@ -10,16 +10,19 @@ exactly like a right one on a card.
 INVARIANT PROTECTED
 -------------------
 `axis1_answer` returns a claim only when a `NativityIndex` was supplied and that
-index holds a reconciled PLANTS match for the taxon. A `PlantsDomain()` built
-with no index returns `None` for everything — which is what it did from M1
-through M3, and is still the correct behaviour for a domain nobody has given a
-source to. Nothing changed about the contract when the source arrived; the
-claims simply stopped being absent.
+index holds one for the taxon. A `PlantsDomain()` built with no index returns
+`None` for everything — which is what it did from M1 through M3, and is still
+the correct behaviour for a domain nobody has given a source to. Nothing changed
+about the contract when the sources arrived; the claims simply stopped being
+absent.
 
-The index is built by `sift_pack.usda.reconcile`, which is the only code in Sift
-that can construct an `Axis1Result`. This module looks claims up; it does not
-derive them, and it has no path that invents one for a taxon the index does not
-cover.
+The index is built by `sift_pack.nativity`, which reconciles USDA PLANTS against
+the state's iNaturalist place checklist and produces a claim only where they
+agree or where exactly one of them has an answer. A taxon the two sources
+contradict each other about is absent from the index, and therefore gets no card
+— see `docs/decisions.md`, 2026-08-08. This module looks claims up; it does not
+derive them, cannot break a tie, and has no path that invents one for a taxon
+the index does not cover.
 """
 
 from __future__ import annotations
@@ -38,11 +41,16 @@ NativityIndex = Mapping[int, Axis1Result]
 A mapping rather than a lookup function so that the domain cannot trigger work:
 every claim in it was derived, recorded and auditable before the domain saw it,
 and a taxon missing from it is missing because reconciliation declined to make a
-claim, not because a lookup happened to fail at card-building time."""
+claim — for want of a source, or because two sources disagreed — not because a
+lookup happened to fail at card-building time.
+
+Scoped to one state by construction. The claims in it were built against one
+place's checklist, so the index for Michigan is not a general answer that
+happens to be about Michigan; it is the only thing `axis1_answer` can return."""
 
 
 class PlantsDomain:
-    """Plants: native or introduced, per USDA PLANTS state distribution data.
+    """Plants: native or introduced, where PLANTS and the place checklist agree.
 
     Implements `sift_pack.domains.TaxonDomain`. Conformance is checked
     statically — see `tests/test_domains.py` — rather than by inheriting from
@@ -65,7 +73,7 @@ class PlantsDomain:
 
         Args:
             nativity: Claims keyed by iNaturalist taxon ID, from
-                `sift_pack.usda.reconcile`. Omitted, the domain determines
+                `sift_pack.nativity.decide_pool`. Omitted, the domain determines
                 nothing and every taxon is dropped — the M1 behaviour, which is
                 still correct for a domain with no source behind it.
         """
@@ -92,15 +100,18 @@ class PlantsDomain:
         return ["native", "introduced"]
 
     def axis1_answer(self, taxon_id: int, state: str) -> Axis1Result | None:
-        """Look up whether USDA PLANTS calls a taxon native.
+        """Look up the reconciled nativity claim for a taxon.
 
         Args:
             taxon_id: iNaturalist taxon ID to look up.
             state: Two-letter US state code the pack is for. Accepted for
-                protocol conformance and not consulted: PLANTS records native
-                status per region, never per state, so the honest scope of the
-                claim is the lower 48 rather than Michigan specifically. See
-                `docs/decisions.md`, 2026-08-08.
+                protocol conformance and not consulted *here*, because the index
+                this domain was built with is already scoped to one state: the
+                place checklist half of every claim in it was answered by that
+                state's own list and refused otherwise (`sift_pack.nativity`,
+                `sift_pack.inat.nativity`). Looking the state up again at card
+                time would be re-deriving something already decided, and would
+                invite a second, divergent answer.
 
         Returns:
             The reconciled claim, or `None` when the index holds none — which
@@ -112,11 +123,12 @@ class PlantsDomain:
             True
             >>> from datetime import date
             >>> from sift_pack.domains import Axis1Result
-            >>> claim = Axis1Result("native", "USDA PLANTS", "high", date(2026, 8, 8))
+            >>> from sift_pack.usda.reconcile import usda_source_ref
+            >>> claim = Axis1Result("native", (usda_source_ref(date(2026, 8, 8)),), "high")
             >>> PlantsDomain({48662: claim}).axis1_answer(48662, "MI").value
             'native'
         """
-        del state  # See Args: PLANTS has no per-state native status.
+        del state  # See Args: the index is already scoped to one state.
         return self.nativity.get(taxon_id)
 
     def prompt_copy(self) -> dict[str, str]:

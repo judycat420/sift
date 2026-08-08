@@ -1,0 +1,152 @@
+{
+ "endpoint": "taxa_by_id",
+ "fetched_at": "2026-08-08T13:06:22.733316+00:00",
+ "params": {
+  "ids": [
+   55620,
+   61321,
+   64697
+  ],
+  "preferred_place_id": 40
+ },
+ "projection_version": 3,
+ "response": {
+  "results": [
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Magnoliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Solanales",
+      "rank": "order"
+     },
+     {
+      "name": "Solanaceae",
+      "rank": "family"
+     },
+     {
+      "name": "Solanoideae",
+      "rank": "subfamily"
+     },
+     {
+      "name": "Solaneae",
+      "rank": "tribe"
+     },
+     {
+      "name": "Solanum",
+      "rank": "genus"
+     }
+    ],
+    "establishment_means": {
+     "establishment_means": "introduced",
+     "place": {
+      "admin_level": null,
+      "id": 97394,
+      "name": "North America"
+     }
+    },
+    "id": 55620,
+    "name": "Solanum dulcamara"
+   },
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Magnoliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Myrtales",
+      "rank": "order"
+     },
+     {
+      "name": "Lythraceae",
+      "rank": "family"
+     },
+     {
+      "name": "Lythrum",
+      "rank": "genus"
+     }
+    ],
+    "establishment_means": {
+     "establishment_means": "introduced",
+     "place": {
+      "admin_level": null,
+      "id": 97394,
+      "name": "North America"
+     }
+    },
+    "id": 61321,
+    "name": "Lythrum salicaria"
+   },
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Magnoliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Rosales",
+      "rank": "order"
+     },
+     {
+      "name": "Elaeagnaceae",
+      "rank": "family"
+     },
+     {
+      "name": "Elaeagnus",
+      "rank": "genus"
+     }
+    ],
+    "establishment_means": {
+     "establishment_means": "introduced",
+     "place": {
+      "admin_level": null,
+      "id": 97394,
+      "name": "North America"
+     }
+    },
+    "id": 64697,
+    "name": "Elaeagnus umbellata"
+   }
+  ],
+  "total_results": 3
+ }
+}

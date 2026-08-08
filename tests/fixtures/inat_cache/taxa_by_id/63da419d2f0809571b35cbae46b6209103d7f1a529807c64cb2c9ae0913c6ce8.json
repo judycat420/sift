@@ -1,0 +1,71 @@
+{
+ "endpoint": "taxa_by_id",
+ "fetched_at": "2026-08-08T13:06:22.726093+00:00",
+ "params": {
+  "ids": [
+   1677724
+  ],
+  "preferred_place_id": 29
+ },
+ "projection_version": 3,
+ "response": {
+  "results": [
+   {
+    "ancestors": [
+     {
+      "name": "Plantae",
+      "rank": "kingdom"
+     },
+     {
+      "name": "Tracheophyta",
+      "rank": "phylum"
+     },
+     {
+      "name": "Angiospermae",
+      "rank": "subphylum"
+     },
+     {
+      "name": "Magnoliopsida",
+      "rank": "class"
+     },
+     {
+      "name": "Asterales",
+      "rank": "order"
+     },
+     {
+      "name": "Asteraceae",
+      "rank": "family"
+     },
+     {
+      "name": "Asteroideae",
+      "rank": "subfamily"
+     },
+     {
+      "name": "Anthemideae",
+      "rank": "tribe"
+     },
+     {
+      "name": "Artemisiinae",
+      "rank": "subtribe"
+     },
+     {
+      "name": "Artemisia",
+      "rank": "genus"
+     },
+     {
+      "name": "Dracunculus",
+      "rank": "subgenus"
+     },
+     {
+      "name": "Artemisia campestris",
+      "rank": "complex"
+     }
+    ],
+    "establishment_means": null,
+    "id": 1677724,
+    "name": "Artemisia caudata"
+   }
+  ],
+  "total_results": 1
+ }
+}

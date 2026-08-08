@@ -1,0 +1,20 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:39:46.878610+00:00",
+ "key": "ROPS",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Robinia pseudoacacia L.",
+  "symbol": "ROPS"
+ }
+}

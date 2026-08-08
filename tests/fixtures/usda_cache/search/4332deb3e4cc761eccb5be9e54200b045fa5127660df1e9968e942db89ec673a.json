@@ -1,0 +1,42 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:39:45.940633+00:00",
+ "key": "Robinia pseudoacacia",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Robinia pseudoacacia",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Robinia pseudoacacia L.",
+    "symbol": "ROPS"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Robinia pseudoacacia",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Robinia pseudoacacia L. var. pyramidalis Pepin",
+    "symbol": "ROPSP"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Robinia pseudoacacia",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Robinia pseudoacacia L. var. rectissima (L.) Raber",
+    "symbol": "ROPSR"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Robinia pseudoacacia",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Robinia pseudoacacia L. f. inermis (Mirb.) Rehder",
+    "symbol": "ROPSI2"
+   }
+  ]
+ }
+}

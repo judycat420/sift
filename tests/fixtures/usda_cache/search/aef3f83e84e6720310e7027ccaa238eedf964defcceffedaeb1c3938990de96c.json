@@ -1,0 +1,34 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:40:27.974873+00:00",
+ "key": "Geranium robertianum",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Geranium robertianum",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Geranium robertianum L.",
+    "symbol": "GERO"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Geranium robertianum",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Geranium robertianum L. ssp. purpureum (Vill.) Nyman",
+    "symbol": "GEROP"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Geranium robertianum",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Geranium robertianum L. ssp. robertianum",
+    "symbol": "GEROR2"
+   }
+  ]
+ }
+}

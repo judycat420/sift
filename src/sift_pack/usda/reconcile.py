@@ -42,12 +42,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, time
 from typing import Literal
 
 from sift_pack.domains import Axis1Result
-from sift_pack.manifest import Confidence
-from sift_pack.usda.client import PlantsClient, PlantsError, PlantsRecord
+from sift_pack.manifest import Confidence, SourceRef
+from sift_pack.usda.client import PLANTS_API, PlantsClient, PlantsError, PlantsRecord
 
 __all__ = [
     "NATIVITY_REGION",
@@ -56,12 +56,13 @@ __all__ = [
     "Reconciliation",
     "RejectionReason",
     "reconcile",
+    "usda_source_ref",
 ]
 
 _log = logging.getLogger(__name__)
 
 USDA_SOURCE_NAME = "USDA PLANTS"
-"""Recorded as `Axis1Result.source` on every claim derived here."""
+"""Recorded as a `SourceRef.name` on every claim derived here."""
 
 NATIVITY_REGION = "L48"
 """The PLANTS region Sift reads native status from.
@@ -101,6 +102,32 @@ reason rather than being coerced into the nearer of the two.
 """
 
 _TIER_CONFIDENCE: dict[MatchTier, Confidence] = {1: "high", 2: "high", 3: "medium"}
+
+
+def usda_source_ref(source_version: date) -> SourceRef:
+    """Build the provenance record for a claim derived from PLANTS.
+
+    The version is the retrieval date because PLANTS publishes no edition or
+    dataset version through its services API — see `docs/decisions.md`,
+    2026-08-08, "Nativity claims are versioned by retrieval date".
+
+    Args:
+        source_version: The date the PLANTS records behind the claim were read.
+
+    Returns:
+        The source reference to attach to claims from that retrieval.
+
+    Example:
+        >>> from datetime import date
+        >>> usda_source_ref(date(2026, 8, 8)).version
+        'retrieved 2026-08-08'
+    """
+    return SourceRef(
+        name=USDA_SOURCE_NAME,
+        version=f"retrieved {source_version.isoformat()}",
+        retrieved_at=datetime.combine(source_version, time.min, tzinfo=UTC),
+        url=PLANTS_API,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -344,8 +371,7 @@ def reconcile(
         plants_name=plants_name,
         claim=Axis1Result(
             value=value,
-            source=USDA_SOURCE_NAME,
+            sources=(usda_source_ref(source_version),),
             confidence=_TIER_CONFIDENCE[tier],
-            source_version=source_version,
         ),
     )

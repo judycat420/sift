@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from sift_pack.manifest import Image, Manifest, SourceRef, Taxon
+from sift_pack.manifest import PACK_VERSION, Image, Manifest, SourceRef, Taxon
 
 BUILT_AT = datetime(2026, 8, 6, 12, 0, 0, tzinfo=UTC)
 TAXONOMY_DATE = date(2026, 7, 1)
@@ -47,13 +47,22 @@ def _taxon(taxon_id: int = 48662, **overrides: Any) -> Taxon:  # noqa: ANN401 - 
         "family": "Apocynaceae",
         "obs_count": 4211,
         "axis1_value": "native",
-        "axis1_source": "USDA PLANTS",
+        "axis1_sources": [_usda_source()],
         "axis1_confidence": "high",
         "answer_rank": "species",
         "image_hashes": [_hash(f"a{n}") for n in range(4)],
     }
     fields.update(overrides)
     return Taxon(**fields)
+
+
+def _usda_source() -> SourceRef:
+    return SourceRef(
+        name="USDA PLANTS",
+        version="retrieved 2026-08-08",
+        retrieved_at=BUILT_AT,
+        url="https://plantsservices.sc.egov.usda.gov/api/",
+    )
 
 
 def _source() -> SourceRef:
@@ -85,7 +94,7 @@ def _manifest(**overrides: Any) -> Manifest:  # noqa: ANN401 - these helpers exi
 
 def test_a_consistent_manifest_validates() -> None:
     manifest = _manifest()
-    assert manifest.pack_version == 1
+    assert manifest.pack_version == PACK_VERSION
     assert len(manifest.taxa) == 1
     assert len(manifest.images) == 4
 
@@ -106,7 +115,7 @@ def test_round_trip_survives_an_empty_pack() -> None:
 def test_manifest_json_is_parseable_as_plain_json() -> None:
     # The runtime half is not necessarily Python; the manifest must be ordinary JSON.
     payload = json.loads(_manifest().model_dump_json())
-    assert payload["taxa"][0]["axis1_source"] == "USDA PLANTS"
+    assert payload["taxa"][0]["axis1_sources"][0]["name"] == "USDA PLANTS"
     assert payload["images"][0]["license"] == "cc0"
 
 
@@ -159,18 +168,45 @@ def test_taxon_cannot_be_built_without_an_axis1_source() -> None:
         "family": "Apocynaceae",
         "obs_count": 1,
         "axis1_value": "native",
-        # axis1_source deliberately omitted
+        # axis1_sources deliberately omitted
         "axis1_confidence": "high",
         "answer_rank": "species",
         "image_hashes": [_hash(f"a{n}") for n in range(4)],
     }
-    with pytest.raises(ValidationError, match="axis1_source"):
+    with pytest.raises(ValidationError, match="axis1_sources"):
         Taxon(**fields)  # type: ignore[arg-type]
 
 
-def test_axis1_source_cannot_be_blank() -> None:
+def test_axis1_sources_cannot_be_empty() -> None:
+    # The runtime half of the guarantee mypy enforces on `Axis1Result.sources`.
+    # This is where it matters: a manifest is parsed from a file, so the type
+    # checker has nothing to say about what arrives.
+    with pytest.raises(ValidationError, match="axis1_sources"):
+        _taxon(axis1_sources=[])
+
+
+def test_a_bare_source_name_is_no_longer_a_source() -> None:
+    # pack_version 2 replaced `axis1_source: str`. An M4-shaped taxon does not
+    # parse as a weaker one; `extra="forbid"` makes it not parse at all.
     with pytest.raises(ValidationError, match="axis1_source"):
-        _taxon(axis1_source="")
+        _taxon(axis1_source="USDA PLANTS")
+
+
+# --- pack version: an older pack fails loudly ---------------------------------
+
+
+def test_a_previous_pack_version_is_refused_by_name() -> None:
+    payload = json.loads(_manifest().model_dump_json())
+    payload["pack_version"] = 1
+    with pytest.raises(ValidationError, match="pack_version 1"):
+        Manifest.model_validate(payload)
+
+
+def test_the_refusal_says_how_to_rebuild() -> None:
+    payload = json.loads(_manifest().model_dump_json())
+    payload["pack_version"] = 1
+    with pytest.raises(ValidationError, match="promote-pack --state MI"):
+        Manifest.model_validate(payload)
 
 
 # --- referential integrity ----------------------------------------------------

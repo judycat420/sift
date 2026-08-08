@@ -1,0 +1,26 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:42:18.256984+00:00",
+ "key": "Clinopodium vulgare",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Clinopodium vulgare",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Clinopodium vulgare L.",
+    "symbol": "CLVU"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Clinopodium vulgare",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Clinopodium vulgare L. var. neogaea (Fernald) C.F. Reed",
+    "symbol": "CLVUN"
+   }
+  ]
+ }
+}

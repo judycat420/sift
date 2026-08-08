@@ -1,0 +1,34 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:42:48.854276+00:00",
+ "key": "Echinacea purpurea",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Echinacea purpurea",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Echinacea purpurea (L.) Moench",
+    "symbol": "ECPU"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Echinacea purpurea",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Echinacea purpurea (L.) Moench var. arkansana Steyerm.",
+    "symbol": "ECPUA"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Echinacea purpurea",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Echinacea purpurea (L.) Moench var. laevigata (C.L. Boynt. & Beadle) Cronquist",
+    "symbol": "ECPUL2"
+   }
+  ]
+ }
+}

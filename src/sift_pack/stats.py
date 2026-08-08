@@ -26,7 +26,7 @@ import csv
 import json
 import statistics
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import get_args
@@ -473,8 +473,14 @@ class ManifestStats:
         by_tier: Matches per reconciliation tier.
         by_value: Native / introduced split.
         by_confidence: Claims per confidence band.
-        unmatched_by_reason: Dropped taxa, by why PLANTS could not resolve them.
+        by_source_count: Claims backed by one source, and by two.
+        unmatched_by_reason: Dropped taxa, by why no claim could be made.
         demoted: Names restricted to a genus-level question.
+        agreement: Taxa both nativity sources labelled the same way.
+        no_source: Taxa neither source could label.
+        conflicts: Taxa the sources labelled differently, with both labels.
+        single_source: Taxa only one source could label, with which one.
+        excluded: Names withheld by the curated exclusion list.
     """
 
     taxa: int
@@ -484,6 +490,12 @@ class ManifestStats:
     by_confidence: dict[str, int]
     unmatched_by_reason: dict[str, int]
     demoted: list[str]
+    by_source_count: dict[str, int] = field(default_factory=dict)
+    agreement: int = 0
+    no_source: int = 0
+    conflicts: list[tuple[str, str, str]] = field(default_factory=list)
+    single_source: list[tuple[str, str, str]] = field(default_factory=list)
+    excluded: list[str] = field(default_factory=list)
 
     def render(self) -> str:
         """Format the statistics as a plain-text report.
@@ -511,15 +523,55 @@ class ManifestStats:
         lines.append("confidence:")
         lines.extend(f"  {band}: {count}" for band, count in sorted(self.by_confidence.items()))
 
+        lines.extend(self._source_agreement_lines())
+
         total_unmatched = sum(self.unmatched_by_reason.values())
         lines.append(f"dropped at promotion: {total_unmatched}")
         lines.extend(
             f"  {reason}: {count}" for reason, count in sorted(self.unmatched_by_reason.items())
         )
 
+        lines.append(f"curated exclusions applied: {len(self.excluded)}")
+        lines.extend(f"  {name}" for name in sorted(self.excluded))
+
         lines.append(f"genus-demoted: {len(self.demoted)}")
         lines.extend(f"  {name}" for name in sorted(self.demoted))
         return "\n".join(lines)
+
+    def _source_agreement_lines(self) -> list[str]:
+        """The two-source block: how the nativity sources related, and where they did not.
+
+        Conflicts and single-source taxa are listed by name rather than counted,
+        because the count alone is the statistic that hides the interesting
+        cases: three conflicts in a Michigan pack is a fact about three specific
+        contested plants, and which three is the thing worth knowing.
+        """
+        lines = [
+            "nativity sources:",
+            f"  claims backed by both: {self.agreement}",
+            f"  claims backed by one: {len(self.single_source)}",
+            f"  refused as conflicting: {len(self.conflicts)}",
+            f"  no source at all: {self.no_source}",
+        ]
+        if self.by_source_count:
+            lines.append("  sources per promoted claim:")
+            lines.extend(
+                f"    {count} source(s): {taxa}"
+                for count, taxa in sorted(self.by_source_count.items())
+            )
+        if self.conflicts:
+            lines.append("  conflicts (USDA L48 vs place checklist):")
+            lines.extend(
+                f"    {name}: USDA {usda}, checklist {inat}"
+                for name, usda, inat in sorted(self.conflicts)
+            )
+        if self.single_source:
+            lines.append("  single-source claims:")
+            lines.extend(
+                f"    {name}: {value} (only {source})"
+                for name, source, value in sorted(self.single_source)
+            )
+        return lines
 
 
 def summarise_manifest(
@@ -547,12 +599,14 @@ def summarise_manifest(
             for row in csv.DictReader(handle):
                 reasons[row.get("reason", "unrecorded")] += 1
 
-    tiers: dict[str, int] = {}
+    payload: dict[str, object] = {}
     if report_json is not None and report_json.is_file():
-        payload = json.loads(report_json.read_text(encoding="utf-8"))
-        recorded = payload.get("by_tier")
-        if isinstance(recorded, dict):
-            tiers = {str(k): int(v) for k, v in recorded.items()}
+        loaded = json.loads(report_json.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            payload = loaded
+
+    recorded = payload.get("by_tier")
+    tiers = {str(k): int(v) for k, v in recorded.items()} if isinstance(recorded, dict) else {}
 
     return ManifestStats(
         taxa=len(manifest.taxa),
@@ -562,7 +616,48 @@ def summarise_manifest(
         by_confidence=dict(Counter(t.axis1_confidence for t in manifest.taxa)),
         unmatched_by_reason=dict(reasons),
         demoted=[t.scientific_name for t in manifest.taxa if t.answer_rank == "genus"],
+        by_source_count=dict(Counter(str(len(t.axis1_sources)) for t in manifest.taxa)),
+        agreement=_as_int(payload.get("agreement")),
+        no_source=_as_int(payload.get("no_source")),
+        conflicts=_as_triples(payload.get("conflicts"), ("scientific_name", "usda", "inat")),
+        single_source=_as_triples(
+            payload.get("single_source"), ("scientific_name", "source", "value")
+        ),
+        excluded=[str(name) for name in _as_list(payload.get("excluded"))],
     )
+
+
+def _as_int(value: object) -> int:
+    """Read a recorded count, treating an absent or unusable one as zero."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _as_list(value: object) -> list[object]:
+    """Read a recorded list, treating an absent or unusable one as empty."""
+    return value if isinstance(value, list) else []
+
+
+def _as_triples(value: object, keys: tuple[str, str, str]) -> list[tuple[str, str, str]]:
+    """Read a recorded list of objects into tuples, skipping malformed entries.
+
+    Skipping rather than failing: this is a report about a build, and a report
+    that refuses to print because one row of its own bookkeeping is malformed
+    is less useful than one that prints the rest. The manifest itself is
+    validated on parse; nothing here feeds a claim.
+    """
+    first, second, third = keys
+    rows: list[tuple[str, str, str]] = []
+    for entry in _as_list(value):
+        if not isinstance(entry, dict):
+            continue
+        rows.append(
+            (
+                str(entry.get(first, "")),
+                str(entry.get(second, "")),
+                str(entry.get(third, "")),
+            )
+        )
+    return rows
 
 
 def _empty_manifest() -> Manifest:

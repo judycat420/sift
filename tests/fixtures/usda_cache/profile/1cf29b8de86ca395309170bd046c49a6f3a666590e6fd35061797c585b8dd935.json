@@ -1,0 +1,32 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:40:29.088047+00:00",
+ "key": "GERO",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "AK",
+    "status": "I"
+   },
+   {
+    "region": "CAN",
+    "status": "N"
+   },
+   {
+    "region": "L48",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   },
+   {
+    "region": "SPM",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Geranium robertianum L.",
+  "symbol": "GERO"
+ }
+}

@@ -1,0 +1,28 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:35:55.528624+00:00",
+ "key": "MOUN3",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "AK",
+    "status": "N"
+   },
+   {
+    "region": "CAN",
+    "status": "N"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   },
+   {
+    "region": "SPM",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Monotropa uniflora L.",
+  "symbol": "MOUN3"
+ }
+}

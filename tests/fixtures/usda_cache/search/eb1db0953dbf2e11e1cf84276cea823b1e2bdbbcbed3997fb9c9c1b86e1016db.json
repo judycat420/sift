@@ -1,0 +1,18 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:35:59.005906+00:00",
+ "key": "Verbascum thapsus",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Verbascum thapsus",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Verbascum thapsus L.",
+    "symbol": "VETH"
+   }
+  ]
+ }
+}

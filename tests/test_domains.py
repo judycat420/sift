@@ -4,14 +4,30 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from datetime import date
+from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 from sift_pack.domains import Axis1Result, TaxonDomain
 from sift_pack.domains.birds import BirdsDomain
 from sift_pack.domains.plants import PlantsDomain
 from sift_pack.domains.registry import DOMAINS, UnknownDomainError, resolve_domain
+from sift_pack.manifest import SourceRef, Taxon
+
+WHEN = datetime(2026, 7, 1, tzinfo=UTC)
+SOURCE = SourceRef(
+    name="USDA PLANTS",
+    version="2026-07-01",
+    retrieved_at=WHEN,
+    url="https://plantsservices.sc.egov.usda.gov/api/",
+)
+OTHER_SOURCE = SourceRef(
+    name="iNaturalist place checklist",
+    version="Michigan checklist retrieved 2026-07-01",
+    retrieved_at=WHEN,
+    url="https://api.inaturalist.org/v1/taxa",
+)
 
 
 def _accepts_domain(domain: TaxonDomain) -> str:
@@ -28,38 +44,64 @@ def test_axis1_result_requires_every_provenance_field() -> None:
     with pytest.raises(TypeError):
         Axis1Result("native")  # type: ignore[call-arg]
     with pytest.raises(TypeError):
-        Axis1Result("native", "USDA PLANTS")  # type: ignore[call-arg]
-    with pytest.raises(TypeError):
-        Axis1Result("native", "USDA PLANTS", "high")  # type: ignore[call-arg]
+        Axis1Result("native", (SOURCE,))  # type: ignore[call-arg]
 
 
 def test_axis1_result_constructs_with_full_provenance() -> None:
-    claim = Axis1Result(
-        value="native",
-        source="USDA PLANTS",
-        confidence="high",
-        source_version=date(2026, 7, 1),
-    )
+    claim = Axis1Result(value="native", sources=(SOURCE,), confidence="high")
     assert claim.value == "native"
-    assert claim.source == "USDA PLANTS"
+    assert [source.name for source in claim.sources] == ["USDA PLANTS"]
     assert claim.confidence == "high"
-    assert claim.source_version == date(2026, 7, 1)
+    assert claim.sources[0].version == "2026-07-01"
+
+
+def test_axis1_result_carries_every_agreeing_source() -> None:
+    # The M4.1 shape: a claim two sources agreed on names both, each with its
+    # own version, so a reader can check the confidence against the evidence.
+    claim = Axis1Result(value="native", sources=(SOURCE, OTHER_SOURCE), confidence="high")
+    assert [source.name for source in claim.sources] == [
+        "USDA PLANTS",
+        "iNaturalist place checklist",
+    ]
+    assert len({source.version for source in claim.sources}) == 2
 
 
 def test_axis1_result_is_frozen() -> None:
-    claim = Axis1Result("native", "USDA PLANTS", "high", date(2026, 7, 1))
+    claim = Axis1Result("native", (SOURCE,), "high")
     with pytest.raises(dataclasses.FrozenInstanceError):
-        claim.source = "a guess"  # type: ignore[misc]
+        claim.value = "a guess"  # type: ignore[misc]
 
 
 def test_axis1_result_has_no_dict_for_smuggled_attributes() -> None:
     # slots=True: a claim cannot carry an undeclared field past the schema.
     # frozen+slots raises TypeError rather than AttributeError here, from the
     # generated __setattr__; either way the assignment does not happen.
-    claim = Axis1Result("native", "USDA PLANTS", "high", date(2026, 7, 1))
+    claim = Axis1Result("native", (SOURCE,), "high")
     with pytest.raises((AttributeError, TypeError)):
         claim.unofficial_note = "actually not sure"  # type: ignore[attr-defined]
     assert not hasattr(claim, "unofficial_note")
+
+
+def test_an_empty_source_list_cannot_reach_a_claim() -> None:
+    # The type-level half of this is in test_type_level_guarantees.py, and it is
+    # the stronger claim: mypy proves no empty tuple can reach the constructor,
+    # including through `tuple(some_list)`. The runtime half lives on the
+    # manifest, where values do arrive from outside the type system.
+    with pytest.raises(PydanticValidationError):
+        Taxon(
+            inat_taxon_id=48662,
+            scientific_name="Asclepias tuberosa",
+            common_names=[],
+            rank="species",
+            genus="Asclepias",
+            family="Apocynaceae",
+            obs_count=1,
+            axis1_value="native",
+            axis1_sources=[],
+            axis1_confidence="high",
+            answer_rank="species",
+            image_hashes=["0" * 64] * 4,
+        )
 
 
 # --- plants: resolves nothing in M1, and says so ------------------------------

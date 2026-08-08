@@ -1,0 +1,36 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:42:03.315109+00:00",
+ "key": "PHAU7",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "I"
+   },
+   {
+    "region": "CAN",
+    "status": "N"
+   },
+   {
+    "region": "HI",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   },
+   {
+    "region": "PR",
+    "status": "N?"
+   }
+  ],
+  "scientific_name": "Phragmites australis (Cav.) Trin. ex Steud.",
+  "symbol": "PHAU7"
+ }
+}

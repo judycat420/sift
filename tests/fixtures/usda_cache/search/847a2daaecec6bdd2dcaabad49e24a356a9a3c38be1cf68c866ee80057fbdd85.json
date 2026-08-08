@@ -1,0 +1,26 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:35:44.764808+00:00",
+ "key": "Asclepias syriaca",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Asclepias syriaca",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Asclepias syriaca L.",
+    "symbol": "ASSY"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Asclepias syriaca",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Asclepias syriaca L. var. kansana (Vail) Palmer & Steyerm.",
+    "symbol": "ASSYK"
+   }
+  ]
+ }
+}

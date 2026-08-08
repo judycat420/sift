@@ -1,0 +1,20 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:42:49.744391+00:00",
+ "key": "ECPU",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Echinacea purpurea (L.) Moench",
+  "symbol": "ECPU"
+ }
+}
