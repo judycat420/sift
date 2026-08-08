@@ -61,6 +61,7 @@ from sift_pack.transcode import TranscodeError, transcode
 
 __all__ = [
     "OPEN_DATA_URL",
+    "ResolveOptions",
     "ResolveStats",
     "journal_path",
     "resolve_pool",
@@ -147,6 +148,22 @@ class ResolveStats:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ResolveOptions:
+    """Tuning knobs for one resolve run.
+
+    Bundled so `resolve_pool` keeps a readable signature as knobs accumulate.
+
+    Attributes:
+        concurrency: Simultaneous downloads.
+        retry_failed: Clear only the failure ledger and retry those taxa,
+            keeping every stored image and every successful record.
+    """
+
+    concurrency: int = DEFAULT_CONCURRENCY
+    retry_failed: bool = False
+
+
 @dataclass(slots=True)
 class _ResolveContext:
     """Everything photo resolution needs beyond the photos themselves.
@@ -206,7 +223,26 @@ def _read_journal(path: Path) -> tuple[dict[int, _TaxonOutcome], int]:
     return outcomes, len(outcomes)
 
 
-def _seed_from_previous(pool: CandidatePool, work_dir: Path) -> dict[int, _TaxonOutcome]:
+def _previous_photos(pool: CandidatePool, work_dir: Path) -> dict[int, ResolvedPhoto]:
+    """Every photo a previous run stored, keyed by iNaturalist photo id.
+
+    Read independently of whether each taxon is being reused, so a taxon redone
+    under `--retry-failed` re-downloads only the photos that actually failed.
+    A photo id maps to fixed bytes, so reusing one is never stale.
+    """
+    previous = resolved_path(pool.state, work_dir)
+    if not previous.exists():
+        return {}
+    try:
+        prior = ResolvedPool.model_validate_json(previous.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {photo.inat_photo_id: photo for taxon in prior.taxa for photo in taxon.images}
+
+
+def _seed_from_previous(
+    pool: CandidatePool, work_dir: Path, *, retry_failed: bool = False
+) -> dict[int, _TaxonOutcome]:
     """Reuse a previous resolved pool for taxa whose candidate photos are unchanged.
 
     A taxon is only reused when its candidate photo-id set matches exactly. If
@@ -215,8 +251,13 @@ def _seed_from_previous(pool: CandidatePool, work_dir: Path) -> dict[int, _Taxon
     fixed bytes.
 
     Previously-dropped taxa are reused too, drops and all. That makes a re-run
-    genuinely free rather than retrying every 404 each time; to retry failures,
-    delete `resolved_<STATE>.json` and resolve again.
+    genuinely free rather than retrying every 404 each time.
+
+    `retry_failed` clears only the failure ledger: taxa dropped for want of
+    images are resolved again, and taxa whose photos partly failed are redone,
+    while every fully-successful taxon and every stored image is kept. Deleting
+    `resolved_<STATE>.json` to recover one transient 404 would discard 2400 good
+    records to redo one.
     """
     previous = resolved_path(pool.state, work_dir)
     if not previous.exists():
@@ -242,6 +283,10 @@ def _seed_from_previous(pool: CandidatePool, work_dir: Path) -> dict[int, _Taxon
         if expected is None:
             continue
         drops = drops_by_taxon.get(taxon.inat_taxon_id, [])
+        if retry_failed and drops:
+            # This taxon lost photos last time; give them another chance. Its
+            # surviving images stay in the store and are reused by digest.
+            continue
         failed = {drop.inat_photo_id for drop in drops if drop.inat_photo_id is not None}
         # Every candidate photo must be accounted for: stored, or recorded as
         # having failed. A photo that is neither means the fetch stage selected
@@ -249,6 +294,9 @@ def _seed_from_previous(pool: CandidatePool, work_dir: Path) -> dict[int, _Taxon
         # a pack that silently omits the new photo.
         if have | failed >= expected:
             seeded[taxon.inat_taxon_id] = _TaxonOutcome(taxon=taxon, drops=drops)
+
+    if retry_failed:
+        return seeded
 
     resolved_ids = {taxon.inat_taxon_id for taxon in prior.taxa}
     for taxon_id, drops in drops_by_taxon.items():
@@ -347,7 +395,7 @@ def resolve_pool(
     downloader: Downloader,
     store: ImageStore,
     work_dir: Path,
-    concurrency: int = DEFAULT_CONCURRENCY,
+    options: ResolveOptions | None = None,
 ) -> tuple[ResolvedPool, ResolveStats]:
     """Resolve every candidate's photos into stored images.
 
@@ -356,7 +404,7 @@ def resolve_pool(
         downloader: Transport seam for image bytes.
         store: Content-addressed store to write into.
         work_dir: Where the resume journal lives.
-        concurrency: Simultaneous downloads.
+        options: Concurrency and retry behaviour; defaults when omitted.
 
     Returns:
         The resolved pool and what it cost.
@@ -375,7 +423,8 @@ def resolve_pool(
     # A completed pool is itself a ledger. Seeding from it makes a re-run free,
     # which matters because the journal is retired on commit and there would
     # otherwise be nothing to stop a second run re-downloading 2400 images.
-    outcomes = _seed_from_previous(pool, work_dir)
+    settings = options or ResolveOptions()
+    outcomes = _seed_from_previous(pool, work_dir, retry_failed=settings.retry_failed)
     if outcomes:
         _log.info("reusing %d taxa from a previous resolved pool", len(outcomes))
     journalled, _ = _read_journal(journal)
@@ -387,13 +436,20 @@ def resolve_pool(
     stats = ResolveStats(skipped=replayed)
     # Photo id -> already-stored image, so a taxon redone after a crash reuses
     # bytes that are already on disk instead of downloading them again.
-    ledger: dict[int, ResolvedPhoto] = {}
+    # Seeded from every photo a previous run stored, not only from the taxa
+    # being reused: a taxon redone under --retry-failed must re-download the
+    # photos that failed and no others.
+    ledger: dict[int, ResolvedPhoto] = _previous_photos(pool, work_dir)
     for outcome in outcomes.values():
         if outcome.taxon is not None:
             for photo in outcome.taxon.images:
                 ledger[photo.inat_photo_id] = photo
     context = _ResolveContext(
-        downloader=downloader, store=store, stats=stats, ledger=ledger, concurrency=concurrency
+        downloader=downloader,
+        store=store,
+        stats=stats,
+        ledger=ledger,
+        concurrency=settings.concurrency,
     )
 
     for candidate in pool.candidates:

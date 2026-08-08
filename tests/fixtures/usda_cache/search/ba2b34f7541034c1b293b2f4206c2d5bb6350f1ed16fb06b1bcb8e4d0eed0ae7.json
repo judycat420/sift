@@ -1,0 +1,18 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:14.809025+00:00",
+ "key": "Symplocarpus foetidus",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Symplocarpus foetidus",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Symplocarpus foetidus (L.) Salisb. ex W.P.C. Barton",
+    "symbol": "SYFO"
+   }
+  ]
+ }
+}

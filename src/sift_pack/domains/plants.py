@@ -9,25 +9,36 @@ exactly like a right one on a card.
 
 INVARIANT PROTECTED
 -------------------
-`axis1_answer` currently returns `None` for every input, because nothing is
-wired to USDA PLANTS until M3. This is the module working correctly, not a stub
-awaiting completion: with no source consulted, `None` ("cannot determine") is
-the only honest answer, and the protocol's `None` contract means every such
-taxon is dropped and counted. The result is an empty deck, which is the right
-output for a build that knows nothing — an empty deck teaches nobody anything,
-but a wrong one teaches them something false.
+`axis1_answer` returns a claim only when a `NativityIndex` was supplied and that
+index holds a reconciled PLANTS match for the taxon. A `PlantsDomain()` built
+with no index returns `None` for everything — which is what it did from M1
+through M3, and is still the correct behaviour for a domain nobody has given a
+source to. Nothing changed about the contract when the source arrived; the
+claims simply stopped being absent.
 
-When M3 lands, only the body of `axis1_answer` changes. Its signature, and
-every caller's obligation to handle `None`, stay exactly as they are now.
+The index is built by `sift_pack.usda.reconcile`, which is the only code in Sift
+that can construct an `Axis1Result`. This module looks claims up; it does not
+derive them, and it has no path that invents one for a taxon the index does not
+cover.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from sift_pack.domains import Axis1Result
 
-__all__ = ["PlantsDomain"]
+__all__ = ["NativityIndex", "PlantsDomain"]
 
 _PLANTAE_ICONIC_TAXON_ID = 47126
+
+NativityIndex = Mapping[int, Axis1Result]
+"""iNaturalist taxon ID to its reconciled nativity claim.
+
+A mapping rather than a lookup function so that the domain cannot trigger work:
+every claim in it was derived, recorded and auditable before the domain saw it,
+and a taxon missing from it is missing because reconciliation declined to make a
+claim, not because a lookup happened to fail at card-building time."""
 
 
 class PlantsDomain:
@@ -48,6 +59,17 @@ class PlantsDomain:
     slug: str = "plants"
     iconic_taxon_id: int = _PLANTAE_ICONIC_TAXON_ID
     axis1_label: str = "Native or introduced?"
+
+    def __init__(self, nativity: NativityIndex | None = None) -> None:
+        """Build the domain, optionally with reconciled nativity claims.
+
+        Args:
+            nativity: Claims keyed by iNaturalist taxon ID, from
+                `sift_pack.usda.reconcile`. Omitted, the domain determines
+                nothing and every taxon is dropped — the M1 behaviour, which is
+                still correct for a domain with no source behind it.
+        """
+        self.nativity: NativityIndex = {} if nativity is None else nativity
 
     def axis1_options(self, state: str) -> list[str]:
         """List the nativity values a learner may choose between.
@@ -70,29 +92,32 @@ class PlantsDomain:
         return ["native", "introduced"]
 
     def axis1_answer(self, taxon_id: int, state: str) -> Axis1Result | None:
-        """Determine whether a taxon is native to a state.
-
-        Returns `None` for every input until M3 wires in USDA PLANTS. Nothing
-        has been consulted, so there is nothing to claim, and inventing a claim
-        here is the precise failure the type system in this package exists to
-        prevent.
+        """Look up whether USDA PLANTS calls a taxon native.
 
         Args:
             taxon_id: iNaturalist taxon ID to look up.
-            state: Two-letter US state code the claim is about.
+            state: Two-letter US state code the pack is for. Accepted for
+                protocol conformance and not consulted: PLANTS records native
+                status per region, never per state, so the honest scope of the
+                claim is the lower 48 rather than Michigan specifically. See
+                `docs/decisions.md`, 2026-08-08.
 
         Returns:
-            Always `None` in M1, meaning "cannot determine". Callers must drop
-            the taxon and count the drop; they must not substitute a default.
-            From M3, an `Axis1Result` sourced from USDA PLANTS when that dataset
-            covers the taxon in that state, and `None` when it does not.
+            The reconciled claim, or `None` when the index holds none — which
+            means reconciliation declined to make one. Callers must drop the
+            taxon and count the drop; they must not substitute a default.
 
         Example:
             >>> PlantsDomain().axis1_answer(48662, "MI") is None
             True
+            >>> from datetime import date
+            >>> from sift_pack.domains import Axis1Result
+            >>> claim = Axis1Result("native", "USDA PLANTS", "high", date(2026, 8, 8))
+            >>> PlantsDomain({48662: claim}).axis1_answer(48662, "MI").value
+            'native'
         """
-        del taxon_id, state  # No source is wired up yet; see the module docstring.
-        return None
+        del state  # See Args: PLANTS has no per-state native status.
+        return self.nativity.get(taxon_id)
 
     def prompt_copy(self) -> dict[str, str]:
         """Return the plants domain's user-facing wording.

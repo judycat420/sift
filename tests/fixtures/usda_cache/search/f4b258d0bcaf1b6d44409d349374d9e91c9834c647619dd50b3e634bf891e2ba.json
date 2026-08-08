@@ -1,0 +1,34 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:12.571858+00:00",
+ "key": "Phytolacca americana",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Phytolacca americana",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Phytolacca americana L.",
+    "symbol": "PHAM4"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Phytolacca americana",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Phytolacca americana L. var. americana",
+    "symbol": "PHAMA3"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Phytolacca americana",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Phytolacca americana L. var. rigida (Small) Caulkins & Wyatt",
+    "symbol": "PHAMR"
+   }
+  ]
+ }
+}

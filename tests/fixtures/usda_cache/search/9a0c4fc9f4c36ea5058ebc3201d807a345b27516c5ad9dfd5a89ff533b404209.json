@@ -1,0 +1,58 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:38:18.571703+00:00",
+ "key": "Asclepias tuberosa",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Asclepias tuberosa",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Asclepias tuberosa L.",
+    "symbol": "ASTU"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Asclepias tuberosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Asclepias tuberosa L. ssp. interior Woodson",
+    "symbol": "ASTUI"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Asclepias tuberosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Asclepias tuberosa L. ssp. rolfsii (Britton ex Vail) Woodson",
+    "symbol": "ASTUR"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Asclepias tuberosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Asclepias tuberosa L. ssp. terminalis Woodson",
+    "symbol": "ASTUT"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Asclepias tuberosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Asclepias tuberosa L. ssp. tuberosa",
+    "symbol": "ASTUT2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Asclepias tuberosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Asclepias tuberosa L. var. interior (Woodson) Shinners",
+    "symbol": "ASTUI2"
+   }
+  ]
+ }
+}

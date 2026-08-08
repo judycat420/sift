@@ -7,9 +7,9 @@ every user-facing claim attached to the source it came from and a confidence in
 it. Where a claim cannot be attributed, it is dropped and counted — never
 guessed.
 
-Status: **M3 — image resolution**. `fetch` produces candidate pools sampled
-across the seasons; `resolve` downloads, transcodes and content-addresses their
-photos; `build` still cannot produce a manifest and says so rather than guessing.
+Status: **M4 — promotion**. The pipeline runs end to end: `fetch` builds a
+candidate pool, `resolve` stores its photos, and `promote-pack` attaches a
+sourced nativity claim from USDA PLANTS and emits a manifest.
 
 ## Getting started
 
@@ -22,6 +22,9 @@ uv run sift-pack stats --state MI
 
 uv run sift-pack resolve --state MI
 uv run sift-pack stats --state MI --resolved
+
+uv run sift-pack promote-pack --state MI
+uv run sift-pack stats --state MI --manifest
 ```
 
 `fetch` writes `work/candidates_MI.json` and caches every API response under
@@ -35,9 +38,10 @@ to 500px, strips every byte of metadata, and stores it under the SHA-256 of the
 transcoded output. It journals per taxon, so a killed run resumes; a completed
 run repeats for free.
 
-`build` exits 4: promotion needs a nativity claim with a source — USDA PLANTS,
-M4. It refuses to emit an empty manifest, because that would claim promotion ran
-and rejected everything.
+`promote-pack` is the terminal step and the only code path in Sift that can
+create a nativity claim. A taxon USDA PLANTS cannot resolve unambiguously is
+dropped and written to `work/unmatched_MI.csv` with a reason — dropped and
+unrecorded are different things.
 
 Individual targets: `make lint`, `make format`, `make typecheck`, `make test`.
 `make help` lists them.
@@ -46,8 +50,8 @@ Individual targets: `make lint`, `make format`, `make typecheck`, `make test`.
 
 ```
 iNaturalist ──fetch──> CandidatePool ──resolve──> ResolvedPool ──promote──> Manifest
-   API                  (work/)      + S3 bytes    (work/ +        (M4,        (pack)
-                                                    images/)      USDA)
+   API                  (work/)      + S3 bytes    (work/ +      + USDA       (packs/)
+                                                    images/)     PLANTS
 ```
 
 Each stage adds exactly what it can source. A candidate photo has a URL; a
@@ -105,7 +109,13 @@ src/sift_pack/           The build half: fetches, filters, assembles packs
   lock.py                One fetch at a time; Sift is a guest on a public API
   stats.py               What a pool actually contains
   domains/               The one axis on which plants/birds/pollinators differ
-  cli.py                 `sift-pack fetch | resolve | stats | places | gc | build`
+  usda/                  The only code that can create a nativity claim
+    client.py            Cached, projected access to the PLANTS services API
+    reconcile.py         Three named matching tiers, and when to refuse
+    index.py             Reconciles a whole pool; partitions it into claims/drops
+  promote.py             Terminal step: resolved taxa + claims -> manifest
+  cli.py                 `sift-pack fetch | resolve | promote-pack | stats | gc`
+data/genus_demotions.json  Genera a card may only ask about at genus rank
 images/                  Content-addressed WebP store (gitignored)
 data/places.json         Committed state -> place_id table
 scripts/record_fixtures.py  Re-record test fixtures (live; run by hand)
@@ -127,6 +137,16 @@ Read [STANDARDS.md](STANDARDS.md). The two rules that shape everything else:
 - **No silent failures** — unknown data is dropped and counted, never guessed.
   A domain returning `None` means "cannot determine"; callers must drop the
   taxon and count it, and the schema gives them nowhere to put a guess.
+
+## What a nativity label actually means
+
+USDA PLANTS records native status by **region** (`L48`, `CAN`, …), never per
+state. A Michigan card therefore says what USDA records for the lower 48, which
+is not the same as "native to Michigan" — a Sonoran Desert native naturalised
+around Detroit reads as `L48 (N)`. This is systematic and unfixable from PLANTS;
+it is documented at `docs/decisions.md`, 2026-08-08, and stated on the source in
+`docs/sources.md`. Every claim also carries the retrieval date, because PLANTS
+publishes no version stamp.
 
 ## Licensing
 

@@ -1,0 +1,20 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:36:22.591633+00:00",
+ "key": "LECA2",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "I"
+   }
+  ],
+  "scientific_name": "Leonurus cardiaca L.",
+  "symbol": "LECA2"
+ }
+}

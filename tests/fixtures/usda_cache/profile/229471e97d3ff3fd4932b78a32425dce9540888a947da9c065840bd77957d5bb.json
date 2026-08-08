@@ -1,0 +1,20 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:50:09.729406+00:00",
+ "key": "MOFI",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "N"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Monarda fistulosa L.",
+  "symbol": "MOFI"
+ }
+}

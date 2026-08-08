@@ -1,0 +1,50 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:17.011347+00:00",
+ "key": "Thuja occidentalis",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Thuja occidentalis",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Thuja occidentalis L.",
+    "symbol": "THOC2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Thuja occidentalis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Thuja occidentalis L. var. fastigiata H. Jaeger",
+    "symbol": "THOCF"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Thuja occidentalis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Thuja occidentalis L. var. nigra L.H. Bailey",
+    "symbol": "THOCN"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Thuja occidentalis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Thuja occidentalis L. var. pyramidalis Zederb.",
+    "symbol": "THOCP3"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Thuja occidentalis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Thuja occidentalis L. f. malonyana C.K. Schneid.",
+    "symbol": "THOCM3"
+   }
+  ]
+ }
+}

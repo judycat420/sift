@@ -1,0 +1,24 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:36:36.739155+00:00",
+ "key": "CIIN",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "I"
+   },
+   {
+    "region": "SPM",
+    "status": "I"
+   }
+  ],
+  "scientific_name": "Cichorium intybus L.",
+  "symbol": "CIIN"
+ }
+}

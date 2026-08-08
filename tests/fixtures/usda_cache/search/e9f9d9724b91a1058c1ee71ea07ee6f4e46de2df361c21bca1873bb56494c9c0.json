@@ -1,0 +1,34 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:23.882810+00:00",
+ "key": "Hesperis matronalis",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Hesperis matronalis",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Hesperis matronalis L.",
+    "symbol": "HEMA3"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Hesperis matronalis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Hesperis matronalis L. ssp. candida (Kit.) Hegi & Em. Schmid",
+    "symbol": "HEMAC2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Hesperis matronalis",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Hesperis matronalis L. ssp. voronovii (N. Busch) P.W. Ball",
+    "symbol": "HEMAV"
+   }
+  ]
+ }
+}

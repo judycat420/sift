@@ -1,0 +1,50 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:08.138213+00:00",
+ "key": "Daucus carota",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Daucus carota",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Daucus carota L.",
+    "symbol": "DACA6"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Daucus carota",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Daucus carota L. ssp. carota",
+    "symbol": "DACAC4"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Daucus carota",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Daucus carota L. ssp. sativus (Hoffm.) Arcang.",
+    "symbol": "DACAS"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Daucus carota",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Daucus carota L. var. carota",
+    "symbol": "DACAC5"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Daucus carota",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Daucus carota L. var. sativus Hoffm.",
+    "symbol": "DACAS2"
+   }
+  ]
+ }
+}

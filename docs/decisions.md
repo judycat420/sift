@@ -586,3 +586,84 @@ window destructive. The asymmetry decides it: deleting an image wrongly costs a
 re-download, and deleting a store wrongly costs an afternoon of re-downloading
 and re-transcoding several gigabytes, so the default is the one that cannot lose
 an afternoon.
+
+### 2026-08-08 — USDA PLANTS has no per-state native status; Sift teaches the L48 status
+
+Status: Active
+
+PLANTS records native status by *region* — `L48`, `CAN`, `AK`, `HI`, `PR` — and
+not by state. There is no per-state native status anywhere in the database.
+Sift therefore reads the `L48` entry, and the honest reading of a Michigan card
+is "USDA records this taxon as native within the lower 48 states", not "native
+to Michigan".
+
+Those are not the same claim. A plant native to the Sonoran Desert and
+naturalised around Detroit is `L48 (N)`, and Sift will call it native. The
+error is real, it is systematic rather than random, and it is invisible in every
+count this pipeline produces — a wrongly-native card looks exactly like a
+correct one.
+
+We looked for a better source inside PLANTS and there is not one. Its state data
+is distribution — presence and absence — which cannot distinguish a native
+occurrence from a naturalised one, so joining it would add a cross-check on
+"does USDA agree this grows in Michigan" without touching the actual problem.
+Genuinely per-state nativity exists in other datasets (BONAP, Michigan Flora,
+state natural-heritage programs) with their own licences and their own
+reconciliation problems; adopting one is a phase, not a patch.
+
+What was done instead: the limitation is stated on the source
+(`docs/sources.md`), in the reconciler's module docstring, and in the domain's
+`axis1_answer`, whose `state` argument is explicitly not consulted so that
+nobody reads the signature and assumes a state-level lookup happens. The cost is
+that Sift ships a known-imperfect label rather than none. That is a real
+departure from this project's usual posture, and it is a judgement that the L48
+status is right for the large majority of a Michigan pack — every one of the
+fifteen hand-verified spot-check species resolves correctly — while being wrong
+for an unmeasured minority of US natives adventive in the Great Lakes. If that
+minority matters more than the pack does, the answer is a per-state source, not
+a tweak here.
+
+### 2026-08-08 — Nativity claims are versioned by retrieval date, not publication date
+
+Status: Active
+
+`Axis1Result.source_version` carries the date Sift retrieved a PLANTS record,
+because PLANTS exposes no publication date, edition or dataset version through
+its services API. The profile endpoint returns taxonomy and status with nothing
+to say when either last changed.
+
+A retrieval date is weaker than a publication date and the difference matters:
+two retrievals months apart are distinguishable only by this stamp, and a PLANTS
+revision between them leaves no other trace in the record. A claim can be
+re-checked against a later retrieval, but nothing tells us whether the answer
+changed because the data did or because we asked again. This is recorded as the
+best available answer rather than a good one; if PLANTS ever publishes a version
+stamp, that becomes `source_version` and this entry is superseded.
+
+### 2026-08-08 — Name reconciliation matches on the italicised binomial, in three named tiers
+
+Status: Active
+
+iNaturalist and USDA share no identifier, so the join is by name — the operation
+most likely to produce a confident wrong answer, because a name that matches the
+wrong record looks exactly like one that matches the right one.
+
+Three rules, ordered, each recorded on the claim it produces: an exact accepted
+species name (`high`), a PLANTS synonym followed to its accepted taxon (`high`),
+and a match after case and the hybrid sign are normalised away (`medium`).
+Anything else returns `None` and the taxon is dropped to
+`work/unmatched_<STATE>.csv` with a reason.
+
+The authority is stripped by reading the first `<i>` block, because PLANTS
+italicises exactly the botanical name and leaves the authority in plain text.
+Counting tokens instead gets `(Michx.) Salisb.` and `(M. Bieb.) Cavara & Grande`
+wrong, and gets them wrong silently. Infraspecific records are excluded from a
+species-level match: PLANTS returning only `Daucus carota ssp. sativus` is not
+the species Sift asked about, and treating it as one would attach a cultivated
+carrot's status to wild carrot.
+
+PLANTS' own hedges are never coerced. `NI` (native in part of the region and
+introduced in another), `N?`, `I?`, `W` (waif) and `GP` (cultivation only) each
+become a distinct rejection reason rather than being rounded to the nearer of
+native and introduced. The cost is a smaller pack; the alternative is a card
+asserting something USDA itself declines to assert.

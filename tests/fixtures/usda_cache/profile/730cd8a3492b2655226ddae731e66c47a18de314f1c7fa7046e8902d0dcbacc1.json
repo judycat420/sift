@@ -1,0 +1,16 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:50:10.632025+00:00",
+ "key": "MOFI2",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "L48",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Monarda bradburiana Beck",
+  "symbol": "MOBR2"
+ }
+}

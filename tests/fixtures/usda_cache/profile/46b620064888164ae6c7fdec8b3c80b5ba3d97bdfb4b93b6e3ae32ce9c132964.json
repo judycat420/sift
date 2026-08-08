@@ -1,0 +1,32 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:36:09.084304+00:00",
+ "key": "DACA6",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "I"
+   },
+   {
+    "region": "PB",
+    "status": "I"
+   },
+   {
+    "region": "PR",
+    "status": "I"
+   },
+   {
+    "region": "SPM",
+    "status": "I"
+   }
+  ],
+  "scientific_name": "Daucus carota L.",
+  "symbol": "DACA6"
+ }
+}

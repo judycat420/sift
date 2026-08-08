@@ -1,0 +1,98 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:37:24.795715+00:00",
+ "key": "Monarda fistulosa",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L.",
+    "symbol": "MOFI"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa Sims, nom. inq.",
+    "symbol": "MOFI2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. ssp. brevis (Fosberg & Artz) Scora, ined.",
+    "symbol": "MOFIB2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. ssp. fistulosa",
+    "symbol": "MOFIF"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. ssp. fistulosa var. fistulosa",
+    "symbol": "MOFIF2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. ssp. fistulosa var. menthifolia (Graham) Fernald",
+    "symbol": "MOFIM2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. ssp. fistulosa var. mollis (L.) Benth.",
+    "symbol": "MOFIM3"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. ssp. fistulosa var. rubra A. Gray",
+    "symbol": "MOFIR"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. ssp. fistulosa var. stipitatoglandulosa (Waterf.) Scora, ined.",
+    "symbol": "MOFIS"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. var. brevis Fosberg & Artz",
+    "symbol": "MOFIB"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Monarda fistulosa",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Monarda fistulosa L. var. clinopodia (L.) Cooperr.",
+    "symbol": "MOFIC"
+   }
+  ]
+ }
+}

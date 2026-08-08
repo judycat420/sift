@@ -1,0 +1,20 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:36:13.517914+00:00",
+ "key": "PHAM4",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "N"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Phytolacca americana L.",
+  "symbol": "PHAM4"
+ }
+}

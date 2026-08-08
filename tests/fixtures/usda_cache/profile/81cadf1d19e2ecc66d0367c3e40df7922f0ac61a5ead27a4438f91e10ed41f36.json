@@ -1,0 +1,24 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:46:35.923395+00:00",
+ "key": "CAIN12",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "N"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   },
+   {
+    "region": "SPM",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Carex intumescens Rudge",
+  "symbol": "CAIN12"
+ }
+}

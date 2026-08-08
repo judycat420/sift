@@ -1,0 +1,18 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:38.023941+00:00",
+ "key": "Alliaria petiolata",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Alliaria petiolata",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Alliaria petiolata (M. Bieb.) Cavara & Grande",
+    "symbol": "ALPE4"
+   }
+  ]
+ }
+}

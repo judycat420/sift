@@ -1,0 +1,18 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:33.394567+00:00",
+ "key": "Impatiens capensis",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Impatiens capensis",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Impatiens capensis Meerb.",
+    "symbol": "IMCA"
+   }
+  ]
+ }
+}

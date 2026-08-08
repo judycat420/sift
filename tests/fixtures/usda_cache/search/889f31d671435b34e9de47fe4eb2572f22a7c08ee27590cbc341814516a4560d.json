@@ -1,0 +1,26 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:21.627452+00:00",
+ "key": "Leonurus cardiaca",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Leonurus cardiaca",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Leonurus cardiaca L.",
+    "symbol": "LECA2"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Leonurus cardiaca",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Leonurus cardiaca L. ssp. cardiaca",
+    "symbol": "LECAC7"
+   }
+  ]
+ }
+}

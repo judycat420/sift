@@ -1,0 +1,12 @@
+{
+  "comment": "Genera where species-level identification from a photograph is unreliable enough that a card must ask for genus only. Per docs/decisions.md 2026-08-07, this is a safety net catching a handful of cards, not a primary filter: frequency ranking already excludes most hard taxa because rarely-observed taxa are the hard-to-identify ones. If this list starts catching distinctive species, narrow it rather than widening it.",
+  "source": "Apomictic complexes and graminoid genera in the northeastern North American flora.",
+  "genera": [
+    "Amelanchier",
+    "Carex",
+    "Crataegus",
+    "Rubus",
+    "Solidago",
+    "Symphyotrichum"
+  ]
+}

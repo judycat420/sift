@@ -1,0 +1,18 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:35:49.446732+00:00",
+ "key": "Trillium grandiflorum",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Trillium grandiflorum",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Trillium grandiflorum (Michx.) Salisb.",
+    "symbol": "TRGR4"
+   }
+  ]
+ }
+}

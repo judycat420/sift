@@ -19,7 +19,13 @@ from sift_pack.candidates import CandidatePool, CandidateTaxon
 from sift_pack.download import DownloadError, DownloadFailure, download_one, sized_url
 from sift_pack.imagestore import ImageStore, StoreProfileError, TranscodeProfile, sha256_of
 from sift_pack.manifest import Image
-from sift_pack.resolve import commit, journal_path, referenced_digests, resolve_pool
+from sift_pack.resolve import (
+    ResolveOptions,
+    commit,
+    journal_path,
+    referenced_digests,
+    resolve_pool,
+)
 from sift_pack.resolved import ResolvedPool, ResolvedTaxon
 from sift_pack.transcode import TranscodeError, current_profile, transcode
 from tests.test_candidates import _photo, _pool
@@ -494,3 +500,76 @@ def test_the_journal_is_valid_jsonl(tmp_path: Path) -> None:
     assert len(lines) == 2
     for line in lines:
         assert "inat_taxon_id" in json.loads(line)
+
+
+# --- --retry-failed: clear the failure ledger, keep everything else -----------
+
+
+def test_retry_failed_retries_only_the_taxa_that_lost_photos(tmp_path: Path) -> None:
+    pool = candidate_pool(taxa=2, photos=5)
+    victim = pool.candidates[0].images[0]
+    store = store_at(tmp_path / "s")
+
+    failing = RecordedDownloader({sized_url(victim.source_url): (404, "text/html", b"gone")})
+    first, _ = resolve_pool(pool, failing, store, tmp_path)
+    commit(first, tmp_path)
+    assert [d.reason for d in first.resolve_dropped] == ["photo_not_found"]
+
+    healed = RecordedDownloader()
+    again, stats = resolve_pool(pool, healed, store, tmp_path, ResolveOptions(retry_failed=True))
+
+    # Only the taxon that lost a photo was redone, and only its missing photo
+    # was fetched — the four already stored were reused from the ledger.
+    assert healed.requested == [sized_url(victim.source_url)]
+    assert stats.downloaded == 1
+    assert again.resolve_dropped == []
+    assert len(again.taxa) == 2
+    retried = next(t for t in again.taxa if t.inat_taxon_id == pool.candidates[0].inat_taxon_id)
+    assert len(retried.images) == 5
+
+
+def test_retry_failed_keeps_every_stored_image(tmp_path: Path) -> None:
+    pool = candidate_pool(taxa=2, photos=5)
+    victim = pool.candidates[0].images[0]
+    store = store_at(tmp_path / "s")
+    failing = RecordedDownloader({sized_url(victim.source_url): (404, "text/html", b"gone")})
+    first, _ = resolve_pool(pool, failing, store, tmp_path)
+    commit(first, tmp_path)
+    before = set(store.digests())
+
+    resolve_pool(pool, RecordedDownloader(), store, tmp_path, ResolveOptions(retry_failed=True))
+    assert before <= set(store.digests())
+
+
+def test_retry_failed_revives_a_taxon_that_was_dropped_entirely(tmp_path: Path) -> None:
+    pool = candidate_pool(taxa=2, photos=4)
+    doomed = pool.candidates[0]
+    store = store_at(tmp_path / "s")
+    failing = RecordedDownloader(
+        {sized_url(p.source_url): (404, "text/html", b"gone") for p in doomed.images[:2]}
+    )
+    first, _ = resolve_pool(pool, failing, store, tmp_path)
+    commit(first, tmp_path)
+    assert [t.inat_taxon_id for t in first.taxa] == [pool.candidates[1].inat_taxon_id]
+
+    again, _ = resolve_pool(
+        pool, RecordedDownloader(), store, tmp_path, ResolveOptions(retry_failed=True)
+    )
+    assert len(again.taxa) == 2
+    assert again.resolve_dropped == []
+
+
+def test_without_retry_failed_a_rerun_stays_sticky(tmp_path: Path) -> None:
+    # The default contract: failures do not retry, so a re-run costs nothing.
+    pool = candidate_pool(taxa=2, photos=5)
+    victim = pool.candidates[0].images[0]
+    store = store_at(tmp_path / "s")
+    failing = RecordedDownloader({sized_url(victim.source_url): (404, "text/html", b"gone")})
+    first, _ = resolve_pool(pool, failing, store, tmp_path)
+    commit(first, tmp_path)
+
+    healed = RecordedDownloader()
+    again, stats = resolve_pool(pool, healed, store, tmp_path)
+    assert healed.requested == []
+    assert stats.downloaded == 0
+    assert [d.reason for d in again.resolve_dropped] == ["photo_not_found"]

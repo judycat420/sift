@@ -1,0 +1,24 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:35:48.161298+00:00",
+ "key": "PIST",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "CAN",
+    "status": "N"
+   },
+   {
+    "region": "L48",
+    "status": "N"
+   },
+   {
+    "region": "SPM",
+    "status": "N"
+   }
+  ],
+  "scientific_name": "Pinus strobus L.",
+  "symbol": "PIST"
+ }
+}

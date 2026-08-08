@@ -1,0 +1,50 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:35:56.826628+00:00",
+ "key": "Arisaema triphyllum",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Arisaema triphyllum",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Arisaema triphyllum (L.) Schott",
+    "symbol": "ARTR"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Arisaema triphyllum",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Arisaema triphyllum (L.) Schott ssp. pusillum (Peck) Huttleston",
+    "symbol": "ARTRP"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Arisaema triphyllum",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Arisaema triphyllum (L.) Schott ssp. quinatum (Buckley) Huttleston",
+    "symbol": "ARTRQ"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Arisaema triphyllum",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Arisaema triphyllum (L.) Schott ssp. stewardsonii (Britton) Huttleston",
+    "symbol": "ARTRS"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Arisaema triphyllum",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Arisaema triphyllum (L.) Schott ssp. triphyllum",
+    "symbol": "ARTRT3"
+   }
+  ]
+ }
+}

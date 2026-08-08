@@ -1,0 +1,24 @@
+{
+ "endpoint": "profile",
+ "fetched_at": "2026-08-08T11:36:24.788609+00:00",
+ "key": "HEMA3",
+ "projection_version": 1,
+ "response": {
+  "native_statuses": [
+   {
+    "region": "AK",
+    "status": "I"
+   },
+   {
+    "region": "CAN",
+    "status": "I"
+   },
+   {
+    "region": "L48",
+    "status": "I"
+   }
+  ],
+  "scientific_name": "Hesperis matronalis L.",
+  "symbol": "HEMA3"
+ }
+}

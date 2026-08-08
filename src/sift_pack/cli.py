@@ -28,19 +28,48 @@ from pydantic import ValidationError
 
 from sift_pack.candidates import CandidatePool
 from sift_pack.domains import TaxonDomain
+from sift_pack.domains.plants import PlantsDomain
 from sift_pack.domains.registry import UnknownDomainError, resolve_domain
-from sift_pack.download import DEFAULT_CONCURRENCY, HttpxDownloader
+from sift_pack.download import HttpxDownloader
 from sift_pack.fetch import fetch_pool
 from sift_pack.imagestore import ImageStore, StoreError
 from sift_pack.inat.client import InatClient, InatError
 from sift_pack.inat.places import PLACES_PATH, load_places, refresh_places
 from sift_pack.lock import FetchLockError, fetch_lock
-from sift_pack.resolve import commit, referenced_digests, resolve_pool, resolved_path
+from sift_pack.manifest import Manifest
+from sift_pack.promote import (
+    load_demotions,
+    manifest_path,
+    promote,
+    report_path,
+    unmatched_path,
+    write_report,
+    write_unmatched,
+)
+from sift_pack.resolve import (
+    ResolveOptions,
+    commit,
+    referenced_digests,
+    resolve_pool,
+    resolved_path,
+)
 from sift_pack.resolved import ResolvedPool
-from sift_pack.stats import human_bytes, summarise, summarise_resolved
+from sift_pack.stats import human_bytes, summarise, summarise_manifest, summarise_resolved
 from sift_pack.transcode import current_profile
+from sift_pack.usda.client import PlantsClient
+from sift_pack.usda.index import DEFAULT_USDA_CACHE, build_nativity_index
 
-__all__ = ["app", "build", "fetch", "gc", "main", "places", "resolve", "stats"]
+__all__ = [
+    "app",
+    "build",
+    "fetch",
+    "gc",
+    "main",
+    "places",
+    "promote_pack",
+    "resolve",
+    "stats",
+]
 
 _log = logging.getLogger("sift_pack")
 
@@ -56,6 +85,9 @@ _EXIT_MISSING_POOL = 6
 _EXIT_LOCKED = 7
 _EXIT_STALE_POOL = 8
 _EXIT_STORE_ERROR = 9
+_EXIT_NO_CLAIMS = 10
+
+DEFAULT_PACKS_DIR = Path("packs")
 
 DEFAULT_LIMIT = 300
 """Candidates a fetch aims for.
@@ -276,9 +308,11 @@ def stats(
     state: Annotated[str, typer.Option(help="US state code, e.g. 'MI'.")],
     work_dir: Annotated[Path, typer.Option(help="Where the pool lives.")] = DEFAULT_WORK_DIR,
     cache_dir: Annotated[Path, typer.Option(help="Cache to measure.")] = DEFAULT_CACHE_DIR,
-    store_dir: Annotated[Path, typer.Option(help="Image store to measure.")] = DEFAULT_STORE_DIR,
     resolved: Annotated[
         bool, typer.Option("--resolved", help="Describe the resolved pool instead.")
+    ] = False,
+    manifest: Annotated[
+        bool, typer.Option("--manifest", help="Describe the finished manifest instead.")
     ] = False,
 ) -> None:
     """Summarise a fetched candidate pool, or a resolved one.
@@ -287,8 +321,8 @@ def stats(
         state: Which state's pool to describe.
         work_dir: Directory holding the pool.
         cache_dir: Response cache, measured for the on-disk size line.
-        store_dir: Image store, measured when describing a resolved pool.
         resolved: Describe `resolved_<STATE>.json` rather than the candidates.
+        manifest: Describe `packs/manifest_<STATE>.json` rather than the candidates.
 
     Raises:
         typer.Exit: 6 when no pool has been fetched for that state, 8 when the
@@ -300,6 +334,23 @@ def stats(
         >>> result.exit_code
         6
     """
+    if manifest:
+        source = manifest_path(state, DEFAULT_PACKS_DIR)
+        try:
+            text = source.read_text(encoding="utf-8")
+        except OSError as exc:
+            typer.echo(
+                f"error: no manifest at {source}. Run `sift-pack promote-pack --state "
+                f"{state}` first.",
+                err=True,
+            )
+            raise typer.Exit(code=_EXIT_MISSING_POOL) from exc
+        built = Manifest.model_validate_json(text)
+        unmatched = unmatched_path(state, work_dir)
+        typer.echo(f"pack: {source} ({built.domain}, {built.state})", err=True)
+        typer.echo(summarise_manifest(built, unmatched, report_path(state, work_dir)).render())
+        return
+
     if resolved:
         source = resolved_path(state, work_dir)
         try:
@@ -313,7 +364,7 @@ def stats(
             raise typer.Exit(code=_EXIT_MISSING_POOL) from exc
         resolved_pool = ResolvedPool.model_validate_json(text)
         typer.echo(f"pool: {source} ({resolved_pool.domain}, {resolved_pool.state})", err=True)
-        typer.echo(summarise_resolved(resolved_pool, store_dir).render())
+        typer.echo(summarise_resolved(resolved_pool, DEFAULT_STORE_DIR).render())
         return
 
     source = pool_path(state, work_dir)
@@ -370,10 +421,10 @@ def resolve(
     store_dir: Annotated[Path, typer.Option(help="Content-addressed image store.")] = (
         DEFAULT_STORE_DIR
     ),
-    concurrency: Annotated[
-        int, typer.Option(min=1, max=32, help="Simultaneous downloads.")
-    ] = DEFAULT_CONCURRENCY,
     force: Annotated[bool, typer.Option(help="Break a stale lock.")] = False,
+    retry_failed: Annotated[
+        bool, typer.Option(help="Retry taxa that lost photos, keeping stored images.")
+    ] = False,
 ) -> None:
     """Download, transcode and store every candidate photo for a state.
 
@@ -385,8 +436,9 @@ def resolve(
         state: Which state's candidate pool to resolve.
         work_dir: Where pools and the resume journal live.
         store_dir: Content-addressed image store.
-        concurrency: Simultaneous downloads.
         force: Break a stale lock left by a killed process.
+        retry_failed: Clear the failure ledger only. Taxa that lost photos are
+            resolved again; every stored image and successful record is kept.
 
     Raises:
         typer.Exit: 6 with no candidate pool, 7 when another run holds the lock,
@@ -405,7 +457,13 @@ def resolve(
     try:
         with fetch_lock(work_dir, force=force):
             store = ImageStore(store_dir, current_profile())
-            resolved, stats = resolve_pool(pool, HttpxDownloader(), store, work_dir, concurrency)
+            resolved, stats = resolve_pool(
+                pool,
+                HttpxDownloader(),
+                store,
+                work_dir,
+                ResolveOptions(retry_failed=retry_failed),
+            )
             destination = commit(resolved, work_dir)
     except FetchLockError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -466,6 +524,77 @@ def gc(
         return
     removed, freed = store.collect(referenced)
     typer.echo(f"removed {removed} images, freed {human_bytes(freed)}", err=True)
+
+
+@app.command()
+def promote_pack(
+    state: Annotated[str, typer.Option("--state", help="US state code, e.g. 'MI'.")],
+    work_dir: Annotated[Path, typer.Option(help="Where pools live.")] = DEFAULT_WORK_DIR,
+    packs_dir: Annotated[Path, typer.Option(help="Where manifests are written.")] = (
+        DEFAULT_PACKS_DIR
+    ),
+    cache_dir: Annotated[Path, typer.Option(help="PLANTS response cache.")] = DEFAULT_USDA_CACHE,
+    offline: Annotated[bool, typer.Option(help="Fail on a PLANTS cache miss.")] = False,
+) -> None:
+    """Promote a resolved pool into a manifest, using USDA PLANTS for nativity.
+
+    This is the terminal step and the only one that can produce a nativity
+    claim. Taxa PLANTS cannot resolve unambiguously are dropped and written to
+    `work/unmatched_<STATE>.csv` with a reason.
+
+    Args:
+        state: Which state's resolved pool to promote.
+        work_dir: Where the resolved pool and unmatched report live.
+        packs_dir: Where the finished manifest is written.
+        cache_dir: PLANTS response cache.
+        offline: Fail on a cache miss rather than querying PLANTS.
+
+    Raises:
+        typer.Exit: 6 with no resolved pool, 10 when nothing could be promoted.
+
+    Example:
+        >>> from typer.testing import CliRunner
+        >>> CliRunner().invoke(app, ["promote-pack", "--state", "ZZ"]).exit_code
+        6
+    """
+    _configure_logging(verbose=True)
+    source = resolved_path(state, work_dir)
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError as exc:
+        typer.echo(
+            f"error: no resolved pool at {source}. Run `sift-pack resolve --state {state}` first.",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_MISSING_POOL) from exc
+    pool = ResolvedPool.model_validate_json(text)
+
+    client = PlantsClient(cache_dir, offline=offline)
+    index, reasons, tiers = build_nativity_index(client, pool)
+    manifest, report = promote(
+        pool, PlantsDomain(index), load_demotions(), pool.fetched_at.date(), reasons
+    )
+    report.by_tier = tiers
+    written = write_unmatched(report, state, work_dir)
+    recorded = write_report(report, state, work_dir)
+
+    if not manifest.taxa:
+        typer.echo(
+            f"error: no taxon in {source} acquired a nativity claim, so there is no pack to "
+            f"emit. Every one is in {written} with a reason. An empty manifest is not written, "
+            "because a pack with no cards is not a pack.",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_NO_CLAIMS)
+
+    destination = manifest_path(state, packs_dir)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+    typer.echo(f"wrote {destination}", err=True)
+    typer.echo(f"unmatched report: {written}", err=True)
+    typer.echo(f"promotion report: {recorded}", err=True)
+    typer.echo(f"{report.summary()}, {client.stats.summary()}", err=True)
 
 
 @app.command()

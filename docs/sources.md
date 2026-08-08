@@ -113,10 +113,25 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
 
 ## USDA PLANTS Database
 
-- **URL:** https://plants.usda.gov/ (bulk download:
-  https://plants.usda.gov/downloads)
-- **Used for:** US distribution by state, native/introduced status, wetland
-  indicator status, growth habit, and the USDA symbol as a cross-reference key.
+- **URL:** https://plants.usda.gov/ — data is read from the services API at
+  `https://plantsservices.sc.egov.usda.gov/api/`, endpoints `PlantSearch` and
+  `PlantProfile`.
+- **Used for:** Native / introduced status, and the USDA symbol as a
+  cross-reference key. Nothing else.
+- **Retrieved:** 2026-08-08. PLANTS publishes no version or edition stamp
+  through this API, so the retrieval date is what every claim is versioned by;
+  see `docs/decisions.md`, 2026-08-08.
+- **Download URLs are unstable — pin what works.** Every documented bulk
+  download Sift tried (`/downloads`, `/csvdownload?plantLst=plantCompleteList`,
+  `/java/downloadData?fileName=plantlst.txt`, and the same paths on
+  `plants.sc.egov.usda.gov`) returns **HTTP 200 with an Angular application
+  shell**, not data. A moved endpoint is therefore indistinguishable from a
+  successful fetch unless the content type is checked, and Sift checks it and
+  fails loudly. The one bulk JSON endpoint that still returns data,
+  `characteristicSearchResults`, holds 2186 records — a subset covering only
+  taxa with characteristics data, missing *Alliaria petiolata*, *Trillium
+  grandiflorum*, *Daucus carota* and *Leonurus cardiaca* among others — so it
+  cannot be used as a checklist.
 - **Licence:** US federal government work, public domain within the United
   States. Some contributed content (notably certain photographs and drawings)
   is credited to third parties and is not automatically public domain — check
@@ -127,6 +142,19 @@ Licence policy: CC0 / CC-BY / CC-BY-SA only, NonCommercial excluded
   schedule; pin the download date in provenance and re-check periodically
   rather than assuming currency.
 - **Known limitations:**
+  - **Native status is regional, never per state.** PLANTS reports status for
+    `L48`, `CAN`, `AK`, `HI` and similar regions. There is no per-state native
+    status in the database. So a Michigan pack teaches "USDA's native status for
+    the lower 48", which is *not* "native to Michigan": a Sonoran Desert native
+    naturalised around Detroit is `L48 (N)` and Sift will call it native. This
+    is systematic, invisible in any count Sift produces, and unfixable from
+    PLANTS. See `docs/decisions.md`, 2026-08-08.
+  - Sift teaches **"USDA's native status as of the retrieval date"**, not ground
+    truth. PLANTS is updated infrequently and lags current taxonomy; a card is a
+    faithful report of what one federal dataset said on one day.
+  - PLANTS hedges with codes Sift refuses rather than rounds: `NI` (native in
+    part of a region, introduced in another), `N?` and `I?` (uncertain), `W`
+    (waif), `GP` (known only from cultivation). Each becomes a recorded drop.
   - United States and its territories only. No use for anything outside that
     range, and no inference of absence elsewhere.
   - Distribution is recorded at state (and sometimes county) granularity, which

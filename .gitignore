@@ -25,7 +25,10 @@ htmlcov/
 # once by `sift-pack places --refresh` (docs/decisions.md, 2026-08-07).
 data/*
 !data/places.json
+!data/genus_demotions.json
+!data/genus_demotions.json
 cache/
 work/
 images/
+packs/
 *.zst

@@ -1,0 +1,26 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:35:47.012724+00:00",
+ "key": "Pinus strobus",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Pinus strobus",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Pinus strobus L.",
+    "symbol": "PIST"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Pinus strobus",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Pinus strobus L. var. monticola (Douglas ex D. Don) Nutt.",
+    "symbol": "PISTM"
+   }
+  ]
+ }
+}

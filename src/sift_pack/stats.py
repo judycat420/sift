@@ -22,6 +22,8 @@ that stopped firing is visible rather than silently absent.
 
 from __future__ import annotations
 
+import csv
+import json
 import statistics
 from collections import Counter
 from dataclasses import dataclass
@@ -31,16 +33,18 @@ from typing import get_args
 
 from sift_pack.candidates import CandidatePool, DropReason
 from sift_pack.inat.photos import MONTH_BUCKETS
-from sift_pack.manifest import SourceRef
+from sift_pack.manifest import Manifest, SourceRef
 from sift_pack.resolved import ResolvedPool, ResolveDropReason
 
 __all__ = [
     "Distribution",
+    "ManifestStats",
     "PoolStats",
     "ResolvedStats",
     "empty_stats",
     "human_bytes",
     "summarise",
+    "summarise_manifest",
     "summarise_resolved",
 ]
 
@@ -270,7 +274,7 @@ def summarise(pool: CandidatePool, cache_dir: Path | None = None) -> PoolStats:
 
     Example:
         >>> from datetime import UTC, datetime
-        >>> from sift_pack.manifest import SourceRef
+        >>> from sift_pack.manifest import Manifest, SourceRef
         >>> pool = CandidatePool(
         ...     domain="plants",
         ...     state="MI",
@@ -456,4 +460,128 @@ def _empty_resolved_pool() -> ResolvedPool:
         taxa=[],
         dropped=[],
         resolve_dropped=[],
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ManifestStats:
+    """Everything `sift-pack stats --manifest` prints.
+
+    Attributes:
+        taxa: Cards in the finished pack.
+        images: Image records the pack references.
+        by_tier: Matches per reconciliation tier.
+        by_value: Native / introduced split.
+        by_confidence: Claims per confidence band.
+        unmatched_by_reason: Dropped taxa, by why PLANTS could not resolve them.
+        demoted: Names restricted to a genus-level question.
+    """
+
+    taxa: int
+    images: int
+    by_tier: dict[str, int]
+    by_value: dict[str, int]
+    by_confidence: dict[str, int]
+    unmatched_by_reason: dict[str, int]
+    demoted: list[str]
+
+    def render(self) -> str:
+        """Format the statistics as a plain-text report.
+
+        Returns:
+            A multi-line report.
+
+        Example:
+            >>> ManifestStats(0, 0, {}, {}, {}, {}, []).render().splitlines()[0]
+            'taxa in pack: 0'
+        """
+        lines = [f"taxa in pack: {self.taxa}", f"images referenced: {self.images}"]
+
+        lines.append("matched by tier:")
+        if self.by_tier:
+            lines.extend(f"  {tier}: {count}" for tier, count in sorted(self.by_tier.items()))
+        else:
+            lines.append("  (not recorded)")
+
+        lines.append("nativity split:")
+        for value, count in sorted(self.by_value.items()):
+            share = 100 * count / self.taxa if self.taxa else 0
+            lines.append(f"  {value}: {count} ({share:.0f}%)")
+
+        lines.append("confidence:")
+        lines.extend(f"  {band}: {count}" for band, count in sorted(self.by_confidence.items()))
+
+        total_unmatched = sum(self.unmatched_by_reason.values())
+        lines.append(f"dropped at promotion: {total_unmatched}")
+        lines.extend(
+            f"  {reason}: {count}" for reason, count in sorted(self.unmatched_by_reason.items())
+        )
+
+        lines.append(f"genus-demoted: {len(self.demoted)}")
+        lines.extend(f"  {name}" for name in sorted(self.demoted))
+        return "\n".join(lines)
+
+
+def summarise_manifest(
+    manifest: Manifest,
+    unmatched_csv: Path | None = None,
+    report_json: Path | None = None,
+) -> ManifestStats:
+    """Compute the statistics for a finished manifest.
+
+    Args:
+        manifest: The pack to describe.
+        unmatched_csv: The promotion drop report, read for its reasons.
+        report_json: The promotion report, read for its per-tier match counts.
+
+    Returns:
+        The computed statistics.
+
+    Example:
+        >>> summarise_manifest(_empty_manifest()).taxa
+        0
+    """
+    reasons: Counter[str] = Counter()
+    if unmatched_csv is not None and unmatched_csv.is_file():
+        with unmatched_csv.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                reasons[row.get("reason", "unrecorded")] += 1
+
+    tiers: dict[str, int] = {}
+    if report_json is not None and report_json.is_file():
+        payload = json.loads(report_json.read_text(encoding="utf-8"))
+        recorded = payload.get("by_tier")
+        if isinstance(recorded, dict):
+            tiers = {str(k): int(v) for k, v in recorded.items()}
+
+    return ManifestStats(
+        taxa=len(manifest.taxa),
+        images=len(manifest.images),
+        by_tier=tiers,
+        by_value=dict(Counter(t.axis1_value for t in manifest.taxa)),
+        by_confidence=dict(Counter(t.axis1_confidence for t in manifest.taxa)),
+        unmatched_by_reason=dict(reasons),
+        demoted=[t.scientific_name for t in manifest.taxa if t.answer_rank == "genus"],
+    )
+
+
+def _empty_manifest() -> Manifest:
+    """An empty manifest, for doctests.
+
+    Returns:
+        A valid manifest with no taxa.
+
+    Example:
+        >>> _empty_manifest().state
+        'MI'
+    """
+    when = datetime(2026, 8, 8, tzinfo=UTC)
+    return Manifest(
+        domain="plants",
+        state="MI",
+        built_at=when,
+        inat_taxonomy_date=when.date(),
+        sources=[SourceRef(name="x", version="1", retrieved_at=when, url="https://x.invalid/")],
+        taxa=[],
+        images=[],
     )

@@ -1,0 +1,21 @@
+{
+ "native": [
+  "Asclepias tuberosa",
+  "Monarda fistulosa",
+  "Trillium grandiflorum",
+  "Symplocarpus foetidus",
+  "Arisaema triphyllum",
+  "Phytolacca americana",
+  "Pinus strobus",
+  "Thuja occidentalis",
+  "Impatiens capensis"
+ ],
+ "introduced": [
+  "Alliaria petiolata",
+  "Hesperis matronalis",
+  "Daucus carota",
+  "Cichorium intybus",
+  "Leonurus cardiaca",
+  "Elaeagnus umbellata"
+ ]
+}

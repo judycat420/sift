@@ -1,0 +1,26 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:36:05.963572+00:00",
+ "key": "Elaeagnus umbellata",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Elaeagnus umbellata",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Elaeagnus umbellata Thunb.",
+    "symbol": "ELUM"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Elaeagnus umbellata",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Elaeagnus umbellata Thunb. var. parvifolia (Wall. ex Royle) C.K. Schneid.",
+    "symbol": "ELUMP"
+   }
+  ]
+ }
+}

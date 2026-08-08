@@ -1,0 +1,26 @@
+{
+ "endpoint": "search",
+ "fetched_at": "2026-08-08T11:46:35.003129+00:00",
+ "key": "Carex intumescens",
+ "projection_version": 1,
+ "response": {
+  "results": [
+   {
+    "accepted_symbol": null,
+    "binomial": "Carex intumescens",
+    "is_infraspecific": false,
+    "is_synonym": false,
+    "scientific_name": "Carex intumescens Rudge",
+    "symbol": "CAIN12"
+   },
+   {
+    "accepted_symbol": null,
+    "binomial": "Carex intumescens",
+    "is_infraspecific": true,
+    "is_synonym": false,
+    "scientific_name": "Carex intumescens Rudge var. fernaldii L.H. Bailey",
+    "symbol": "CAINF"
+   }
+  ]
+ }
+}
