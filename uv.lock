@@ -628,6 +628,12 @@ wheels = [
 ]
 
 [[package]]
+name = "metaphone"
+version = "0.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/ae/c9e4d007e32a6469be212da11d0b8e104d643f6f247d771742caf6ac6bb8/Metaphone-0.6.tar.gz", hash = "sha256:ad0beadca66cb7ec6ede71ef72bb02da097c493ddf159930d6340bc83f53da27", size = 14075, upload-time = "2016-08-24T14:37:29.687Z" }
+
+[[package]]
 name = "more-itertools"
 version = "11.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1155,6 +1161,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "metaphone" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pyinaturalist" },
@@ -1175,6 +1182,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "metaphone", specifier = ">=0.6" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pyinaturalist", specifier = ">=0.21.1" },

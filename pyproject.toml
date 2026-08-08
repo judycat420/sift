@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28.1",
+    "metaphone>=0.6",
     "pillow>=12.3.0",
     "pydantic>=2.13.4",
     "pyinaturalist>=0.21.1",
@@ -127,6 +128,9 @@ exclude = ["*.md"]
 [tool.mypy]
 python_version = "3.11"
 files = ["src", "tests", "scripts"]
+# `metaphone` ships no py.typed; stubs/metaphone.pyi states its one signature
+# rather than letting `disallow_any_unimported` be silenced with an ignore.
+mypy_path = "stubs"
 strict = true
 warn_unreachable = true
 disallow_any_unimported = true

@@ -842,3 +842,189 @@ requests per 300-taxon state, and the committed fixture set re-records in about
 thirty. A per-endpoint projection version would avoid the collateral
 invalidation and is worth considering if the cache ever gets expensive to
 rebuild; it is not worth changing the cache-key contract for today.
+
+### 2026-08-09 — An answer that fits another card better is wrong, not nearly right
+
+Status: Active
+
+The matcher grades a typed answer through four rules of increasing forgiveness —
+exact, unordered token set, small edit distance, phonetic on scientific names —
+and before any rule after the first grants credit, the answer is scored against
+every other card in the deck. If another taxon matches by a better rule, or by
+the same rule no worse, the answer is refused and the taxon it actually named is
+recorded on the result.
+
+The case that decided the design is `swamp milkweed` typed on an *Asclepias
+tuberosa* card. It is not a spelling mistake: it is the exact common name of
+*Asclepias incarnata*, which grows in the same state and is in the same pack. A
+matcher generous enough to accept it has told the learner the two are one plant,
+at the exact moment they were trying to learn the difference. Being generous
+here and being wrong are the same act.
+
+Exact matches are exempt, because an exact match is not a guess. But one exact
+answer fitting two cards is a name two plants genuinely share, and crediting
+whichever card came up would hide that; those return `ambiguous` naming both.
+
+The cost is real and one-directional: the guard can only remove credit, never
+add it, so some answers a learner would call fair are refused. `ragweed` is
+refused on both ragweed cards. That is the intended trade — the alternative is a
+pack that quietly teaches two plants are interchangeable, and a wrong card is
+worse than a strict one because the learner cannot tell it was wrong.
+
+### 2026-08-09 — A tie at a fuzzy rule is refused, not resolved by which card came up
+
+Status: Active
+
+The M5 brief specified the guard as firing on a *strictly* better rival. This
+implementation fires on a rival that is merely no worse, which is tighter.
+
+Measurement forced it. Three Michigan pairs reduce to one token set once
+stopwords are dropped: `common ragweed` / `giant ragweed`, `greater celandine` /
+`lesser celandine`, `northern blue flag` / `southern blue flag`. In each, the
+distinguishing word is itself a stopword. Under the strict reading, `ragweed`
+matches both cards at rule 2 with no rival strictly better than the other, so it
+would be scored **correct for whichever card the learner happened to be shown**
+— and correct for the other one too, on the next review. The deck would be
+teaching that the two plants are the same, by exactly the mechanism the guard
+exists to prevent.
+
+A tie means the answer does not distinguish the two plants. Refusing it is the
+only reading consistent with the rule's purpose. Tightening a gate needs no ADR
+under STANDARDS rule 8; this entry exists because the *specification* was
+loosened from, not the gate, and the difference is worth recording.
+
+`ambiguous` is deliberately not reused for these. It means "you typed a name two
+plants genuinely share", which is a fact about the plants; a fuzzy tie is a fact
+about the typing, and conflating them would make the outcome useless to M6.
+
+### 2026-08-09 — Cards asking for the same genus are one answer, not rivals
+
+Status: Active
+
+Four of the seven genus-rank Michigan taxa are *Rubus* — black raspberry,
+thimbleberry, red raspberry and dwarf raspberry. Each card asks "what genus is
+this?", so `Rubus` is the entire correct answer to all four.
+
+Read literally, the ambiguity rule would see one exact answer hitting four
+different taxa and return `ambiguous` — leaving four cards in the shipped pack
+with **no answer any learner could give**, the correct one included. That is not
+a stricter matcher, it is a broken one.
+
+So `AcceptedAnswers.same_answer_as` recognises two genus-rank cards in one genus
+as asking for the same thing, and they are excluded both from the ambiguity
+check and from the guard. Two *species*-rank cards in one genus are never the
+same answer: there the genus is partial credit precisely because it does not
+settle the question.
+
+The exclusion is dropped in one place. When an answer matches the target at no
+rule at all, the search for "which plant did they name, then?" excludes nothing
+— so typing `thimbleberry` on the red raspberry card still reports *Rubus
+parviflorus*, which is the most useful thing to say. Excluding rivals is about
+refusing to *block* a legitimate answer, not about withholding feedback.
+
+### 2026-08-09 — Nine stopwords were kept despite three creating collisions
+
+Status: Superseded by 2026-08-09 — Stopwords are validated against the deck, never assumed
+
+The token-set rule drops `common`, `eastern`, `american`, `wild`, `giant`,
+`lesser`, `greater`, `northern` and `southern` before comparing, so that
+`purple coneflower` answers a card whose recorded name is `eastern purple
+coneflower`. Learners omit these modifiers constantly and faulting them for it
+would measure recall of a style guide rather than of a plant.
+
+The list is also actively dangerous, and the danger was measured rather than
+guessed at. Six of the nine words are exactly what separates one Michigan
+species from another: `common`/`giant` ragweed, `greater`/`lesser` celandine
+(different genera, different families), `northern`/`southern` blue flag. For
+each pair, dropping the stopwords makes the two names identical at rule 2.
+
+They are kept, for two reasons. The full names are still exact answers and
+exactness is exempt from the guard, so a learner who types the whole name is
+unaffected. And the collisions the list creates are precisely the collisions the
+guard catches — all three pairs are refused for both cards, with the confused
+taxon named. Removing the words would trade a caught failure for a silently
+harder card.
+
+What follows is a rule for changing the list: a word may only be added after
+checking it does not merge two taxa in any shipped pack. That check is a scan of
+the manifests, not an opinion, and `CONFUSION_PAIRS` in
+`tests/test_study_matcher.py` is where the current answers are pinned.
+
+### 2026-08-09 — Double Metaphone is a dependency, with a hand-written stub
+
+Status: Active
+
+Rule 4 uses the `metaphone` package (BSD, pure Python, one module) rather than a
+reimplementation. Double Metaphone is several hundred lines of dense
+context-dependent branching; a hand-rolled version would be a liability in a
+module whose entire job is being trustworthy about near-matches. Damerau-
+Levenshtein, by contrast, is thirty lines and is implemented here, so the
+threshold semantics are visible and testable rather than inherited.
+
+The package ships no `py.typed`, and `mypy --strict` runs with
+`disallow_any_unimported`. The fix is `stubs/metaphone.pyi`, one line of
+signature, with `mypy_path = "stubs"` in `pyproject.toml` — rather than an
+ignore comment, per STANDARDS rule 1's preference for making the type real.
+
+One correction worth recording, because the M5 brief asserted otherwise. Double
+Metaphone does **not** match `asklepias` to `asclepias`: the codes are `ASKLPS`
+and `ASKPS`, which differ. It does match `echinacea`/`echinasia`. Both spellings
+are nonetheless accepted, because rule 3 catches `asklepias` at one edit — so
+the cascade holds even though the stated reason for rule 4 was half wrong. The
+rule earns its place on other cases: `kwerkus alba` is three edits from
+`quercus alba` against a two-edit budget, and only phonetics accept it.
+
+Phonetic codes are compared word by word rather than pooled. Pooling matched a
+bare genus against a full binomial — `asclepias` shares a code with the first
+word of `asclepias tuberosa` — which silently promoted partial credit to full.
+That was caught by a doctest, and the per-word tuple is what fixed it.
+
+### 2026-08-09 — Stopwords are validated against the deck, never assumed
+
+Status: Active
+
+The token-set stopword list is narrowed from nine words to two — `wild` and
+`american` — and no word may be added to it without a check that it merges no
+two taxa in any shipped pack. That check is
+`tests/test_study_normalize.py::test_no_two_cards_collapse_onto_one_token_set`,
+which runs over `packs/manifest_MI.json` itself, so a future deck that would
+collide fails the build rather than shipping.
+
+This supersedes the reasoning in the 2026-08-09 entry "Nine stopwords, three of
+which create the collisions they hide". That entry correctly identified the
+danger and then drew the wrong conclusion from it: that the confusion guard made
+the collisions survivable. It does catch them — but a stopword that
+discriminates is worse than having no stopword list at all, because of what it
+converts. A missing stopword costs a learner a correct answer they can see was
+refused. A discriminating stopword turns a correct answer for one plant into a
+**false accept for a different plant**, in the one direction the learner cannot
+detect, and it does so at the rule specifically designed to be forgiving. Relying
+on a downstream guard to clean up after an input-normalisation step that is
+knowably wrong is the wrong shape; the guard is a second line, not a licence.
+
+The measurement that decided the list is worth recording, because it is not what
+inspecting the words suggests. **No single word merges anything.** Adding any one
+of `common`, `eastern`, `giant`, `lesser`, `greater`, `northern` or `southern`
+to an empty list collapses no pair in the Michigan deck. The damage needs *both*
+halves of a contrasting pair — `common`/`giant` ragweed, `greater`/`lesser`
+celandine (different genera, different families), `northern`/`southern` blue
+flag. A word therefore cannot be cleared by looking at it, only by running the
+whole list against the whole deck, which is why the guard is a deck-wide test
+rather than a review checklist.
+
+`western` was named for removal and was never on the list; noted so the absence
+is not read as an oversight.
+
+The cost is paid in forgiveness, and it is real. `white pine` no longer answers
+`eastern white pine`, and `purple coneflower` no longer answers `eastern purple
+coneflower` — the worked example the M5 brief gave for this rule. Both are now
+`wrong`. That is the trade taken deliberately: a learner who omits a modifier is
+told so and can see why, which is recoverable, while a learner told that
+`lesser celandine` and `greater celandine` are the same plant is not. Both
+losses are pinned by name in
+`test_omitting_a_discriminating_modifier_is_no_longer_forgiven` and
+`test_the_brief_s_coneflower_example_no_longer_holds_and_that_is_the_trade`, so
+neither can be reintroduced silently or rediscovered as a bug.
+
+Rule 8 note: this narrows a normalisation input rather than loosening a gate —
+the deck-wide collision test is a new gate, added alongside.

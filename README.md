@@ -7,10 +7,11 @@ every user-facing claim attached to the source it came from and a confidence in
 it. Where a claim cannot be attributed, it is dropped and counted — never
 guessed.
 
-Status: **M4.1 — two-source nativity**. The pipeline runs end to end: `fetch`
-builds a candidate pool, `resolve` stores its photos, and `promote-pack`
+Status: **M5 — the answer matcher**. The build pipeline runs end to end:
+`fetch` builds a candidate pool, `resolve` stores its photos, and `promote-pack`
 attaches a nativity claim — but only where USDA PLANTS and the state's
-iNaturalist place checklist agree — and emits a manifest.
+iNaturalist place checklist agree — and emits a manifest. `sift_pack.study` then
+grades a typed answer against a finished pack.
 
 ## Getting started
 
@@ -120,6 +121,10 @@ src/sift_pack/           The build half: fetches, filters, assembles packs
     index.py             Reconciles a whole pool against PLANTS
   nativity.py            The two-source rule: claim on agreement, refuse on conflict
   promote.py             Terminal step: resolved taxa + claims -> manifest
+  study/                 Grading a typed answer against a finished pack
+    normalize.py         What may be forgiven before two strings are compared
+    answers.py           What counts as an answer, per the question the card asked
+    matcher.py           The four-rule cascade, and the confusion guard over it
   cli.py                 `sift-pack fetch | resolve | promote-pack | stats | gc`
 data/genus_demotions.json  Genera a card may only ask about at genus rank
 data/state_exclusions.json Taxa withheld per state, each with a reason and source
@@ -177,6 +182,46 @@ Two further honesty constraints:
 Every claim carries each source's own retrieval date, because neither source
 publishes a version stamp. See `docs/decisions.md`, 2026-08-08, and
 `docs/sources.md`.
+
+## What "correct" means
+
+`sift_pack.study` decides whether a typed answer matches the card. Four rules,
+tried in order and stopping at the first hit: an exact match, the same words in
+any order once modifiers like "eastern" are dropped, a small edit distance, and
+a phonetic match on scientific names only.
+
+Everything after the first rule can also say yes to the *wrong* plant, so before
+any of them grants credit the answer is scored against **every other card in the
+deck**. If another taxon fits better — or fits equally well — the answer is
+refused and the plant it actually named is recorded.
+
+That is not a hypothetical. Typing `swamp milkweed` on a butterfly-milkweed card
+is not a typo: it is the exact common name of *Asclepias incarnata*, three cards
+away in the same pack. Accepting it would teach that the two are one plant. The
+Michigan deck contains several such pairs — `sugar maple`/`silver maple`,
+`eastern`/`western poison ivy`, `cut-leaved`/`two-leaved toothwort` — and all of
+them are refused, in both directions, with the confused taxon named.
+
+The list of words the token rule is allowed to ignore is deliberately tiny —
+`wild` and `american` — and is validated against the shipped deck rather than
+chosen by taste. A word that discriminates between two plants is worse than no
+stopword list at all: it converts a correct answer for one into a false accept
+for the other. `eastern` and `common` read like noise and are not; each
+separates real Michigan taxa. A build-time check refuses any list that would
+merge two cards.
+
+The guard only ever subtracts. Some answers a learner would call fair get
+refused; `ragweed` is refused on both ragweed cards, because nothing in it says
+which one. A strict card is recoverable — the learner sees what they actually
+named. A wrong one is not.
+
+Genus-rank cards ask only for the genus, and get exactly that: the species
+epithet is neither required nor rewarded, and there is no partial set for those
+seven taxa to fall short of. `Rubus` is the whole correct answer to four
+different Michigan cards, and all four accept it.
+
+Nothing here decides what a match is *worth*. The result records which rule
+fired and at what distance; scheduling is M6's problem.
 
 ## Licensing
 
